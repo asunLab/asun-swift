@@ -287,7 +287,7 @@ public func encodeBinary(_ value: AsonValue) throws -> Data {
     let textSchema = buildSchemaHeader(schema, typed: true)
 
     var writer = BinaryWriter()
-    writer.writeBytes(Array("ASONBIN1".utf8))
+    writer.writeStaticBytes([0x41, 0x53, 0x4F, 0x4E, 0x42, 0x49, 0x4E, 0x31]) // "ASONBIN1"
     try writer.writeString32(textSchema)
 
     let rows: [[String: AsonValue]]
@@ -363,13 +363,43 @@ private func inferRootSchema(from value: AsonValue, typed: Bool) throws -> RootS
         return RootSchema(isSlice: false, fields: inferObjectFields(obj, typed: typed))
     case .array(let arr):
         guard !arr.isEmpty else { return RootSchema(isSlice: true, fields: []) }
-        guard case .object(let first) = arr[0] else {
-            throw AsonError.invalidRoot("array root must contain objects")
-        }
-        return RootSchema(isSlice: true, fields: inferObjectFields(first, typed: typed))
+        return RootSchema(isSlice: true, fields: try inferSliceFields(arr, typed: typed))
     default:
         throw AsonError.invalidRoot("root must be object or array<object>")
     }
+}
+
+private func inferSliceFields(_ rows: [AsonValue], typed: Bool) throws -> [SchemaField] {
+    var objects: [[String: AsonValue]] = []
+    objects.reserveCapacity(rows.count)
+    var keySet = Set<String>()
+
+    for row in rows {
+        guard case .object(let obj) = row else {
+            throw AsonError.invalidRoot("array root must contain objects")
+        }
+        objects.append(obj)
+        keySet.formUnion(obj.keys)
+    }
+
+    let keys = keySet.sorted()
+    var out: [SchemaField] = []
+    out.reserveCapacity(keys.count)
+
+    for key in keys {
+        var merged: SchemaType?
+        for obj in objects {
+            let inferred = inferType(from: obj[key] ?? .null, typed: typed)
+            if let current = merged {
+                merged = try mergeSchemaTypes(current, inferred)
+            } else {
+                merged = inferred
+            }
+        }
+        out.append(SchemaField(name: key, type: merged ?? .dynamic))
+    }
+
+    return out
 }
 
 private func inferObjectFields(_ obj: [String: AsonValue], typed: Bool) -> [SchemaField] {
@@ -414,6 +444,53 @@ private func inferType(from value: AsonValue, typed: Bool) -> SchemaType {
     case .object(let obj):
         return .object(inferObjectFields(obj, typed: true))
     }
+}
+
+private func mergeSchemaTypes(_ lhs: SchemaType, _ rhs: SchemaType) throws -> SchemaType {
+    if lhs == rhs { return lhs }
+
+    switch (lhs, rhs) {
+    case (.dynamic, .dynamic):
+        return .dynamic
+    case (.dynamic, .array), (.array, .dynamic), (.dynamic, .object), (.object, .dynamic):
+        throw AsonError.invalidRoot("array root rows must share compatible field types")
+    case (.dynamic, _), (_, .dynamic):
+        return .dynamic
+    case (.optional(let l), .optional(let r)):
+        return .optional(try mergeSchemaTypes(l, r))
+    case (.optional(let inner), _):
+        return .optional(try mergeOptionalInner(inner, rhs))
+    case (_, .optional(let inner)):
+        return .optional(try mergeOptionalInner(inner, lhs))
+    case (.array(let l), .array(let r)):
+        return .array(try mergeSchemaTypes(l, r))
+    case (.object(let l), .object(let r)):
+        return .object(try mergeObjectFields(l, r))
+    default:
+        throw AsonError.invalidRoot("array root rows must share compatible field types")
+    }
+}
+
+private func mergeOptionalInner(_ optionalInner: SchemaType, _ other: SchemaType) throws -> SchemaType {
+    if optionalInner == .str {
+        return other
+    }
+    return try mergeSchemaTypes(optionalInner, other)
+}
+
+private func mergeObjectFields(_ lhs: [SchemaField], _ rhs: [SchemaField]) throws -> [SchemaField] {
+    let leftNames = lhs.map(\.name)
+    let rightNames = rhs.map(\.name)
+    if leftNames != rightNames {
+        throw AsonError.invalidRoot("array root rows must share compatible nested object schemas")
+    }
+
+    var merged: [SchemaField] = []
+    merged.reserveCapacity(lhs.count)
+    for i in lhs.indices {
+        merged.append(SchemaField(name: lhs[i].name, type: try mergeSchemaTypes(lhs[i].type, rhs[i].type)))
+    }
+    return merged
 }
 
 private func encodeWithSchema(_ value: AsonValue, schema: RootSchema, typed: Bool) throws -> String {
@@ -1116,10 +1193,15 @@ private struct TextParser {
         if idx < storage.count && storage[idx] == 0x2D { neg = true; idx += 1 } // '-'
         var val: UInt64 = 0
         let start = idx
+        let maxValue = neg ? UInt64(Int64.max) + 1 : UInt64(Int64.max)
         while idx < storage.count {
             let c = storage[idx]
             if c >= 0x30 && c <= 0x39 { // '0'-'9'
-                val = val &* 10 &+ UInt64(c - 0x30)
+                let digit = UInt64(c - 0x30)
+                if val > maxValue / 10 || (val == maxValue / 10 && digit > maxValue % 10) {
+                    throw AsonError.invalidData("int overflow")
+                }
+                val = val * 10 + digit
                 idx += 1
             } else { break }
         }
@@ -1140,7 +1222,11 @@ private struct TextParser {
         while idx < storage.count {
             let c = storage[idx]
             if c >= 0x30 && c <= 0x39 {
-                val = val &* 10 &+ UInt64(c - 0x30)
+                let digit = UInt64(c - 0x30)
+                if val > UInt64.max / 10 || (val == UInt64.max / 10 && digit > UInt64.max % 10) {
+                    throw AsonError.invalidData("uint overflow")
+                }
+                val = val * 10 + digit
                 idx += 1
             } else { break }
         }
@@ -1193,7 +1279,15 @@ private struct TextParser {
 private struct BinaryWriter {
     var data = Data()
 
+    init() {
+        data.reserveCapacity(256)
+    }
+
     mutating func writeBytes(_ bytes: [UInt8]) {
+        data.append(contentsOf: bytes)
+    }
+
+    mutating func writeStaticBytes(_ bytes: [UInt8]) {
         data.append(contentsOf: bytes)
     }
 
@@ -1218,20 +1312,22 @@ private struct BinaryWriter {
     }
 
     mutating func writeString32(_ s: String) throws {
-        let u = Array(s.utf8)
-        guard u.count <= Int(UInt32.max) else {
+        let count = s.utf8.count
+        guard count <= Int(UInt32.max) else {
             throw AsonError.invalidData("string too large")
         }
-        writeUInt32(UInt32(u.count))
-        writeBytes(u)
+        writeUInt32(UInt32(count))
+        var copy = s
+        copy.withUTF8 { data.append(contentsOf: $0) }
     }
 
     mutating func writeValue(_ value: AsonValue, as type: SchemaType) throws {
         if type.isOptional {
             if case .null = value {
-                writeUInt32(UInt32.max)
+                writeStaticBytes([0])
                 return
             }
+            writeStaticBytes([1])
         }
 
         switch type.unwrapped {
@@ -1295,18 +1391,18 @@ private struct BinaryReader {
     }
 
     mutating func readUInt32() throws -> UInt32 {
-        let b = try readBytes(4)
-        return b.withUnsafeBytes { $0.load(as: UInt32.self) }.littleEndian
+        let value: UInt32 = try readFixedWidthInteger()
+        return value.littleEndian
     }
 
     mutating func readInt64() throws -> Int64 {
-        let b = try readBytes(8)
-        return b.withUnsafeBytes { $0.load(as: Int64.self) }.littleEndian
+        let value: Int64 = try readFixedWidthInteger()
+        return value.littleEndian
     }
 
     mutating func readUInt64() throws -> UInt64 {
-        let b = try readBytes(8)
-        return b.withUnsafeBytes { $0.load(as: UInt64.self) }.littleEndian
+        let value: UInt64 = try readFixedWidthInteger()
+        return value.littleEndian
     }
 
     mutating func readDouble() throws -> Double {
@@ -1323,12 +1419,15 @@ private struct BinaryReader {
 
     mutating func readValue(as type: SchemaType) throws -> AsonValue {
         if type.isOptional {
-            let markerPos = idx
-            let len = try readUInt32()
-            if len == UInt32.max {
+            let marker = try readBytes(1)
+            switch marker[0] {
+            case 0:
                 return .null
+            case 1:
+                break
+            default:
+                throw AsonError.invalidData("invalid optional marker")
             }
-            idx = markerPos
         }
 
         switch type.unwrapped {
@@ -1367,6 +1466,16 @@ private struct BinaryReader {
         case .optional:
             throw AsonError.invalidData("nested optional unsupported")
         }
+    }
+
+    mutating func readFixedWidthInteger<T: FixedWidthInteger>() throws -> T {
+        let size = MemoryLayout<T>.size
+        guard idx + size <= data.count else { throw AsonError.unexpectedEOF }
+        let value = data.withUnsafeBytes { raw in
+            raw.loadUnaligned(fromByteOffset: idx, as: T.self)
+        }
+        idx += size
+        return value
     }
 }
 

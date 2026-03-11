@@ -6,7 +6,7 @@
 
 ## 特性
 
-- 面向零拷贝：基于 UTF-8 字节数组 + 索引游标解析
+- 基于 UTF-8 字节缓冲区 + 索引游标的解析
 - 热路径不走 JSON 中间层（`encode`/`decode`/`encodeBinary`/`decodeBinary`）
 - Schema-first 元组编码，减少重复字段名开销
 - 支持 typed / untyped 文本输出与 pretty 格式
@@ -49,6 +49,12 @@ swift run cross_compat
 swift run bench -c release
 ```
 
+## 测试
+
+```bash
+swift run run_tests
+```
+
 ## 性能优势
 
 - 直接在字节缓冲区上解析，临时对象和中间分配更少。
@@ -65,4 +71,4 @@ swift run bench -c release
 
 ## 许可证
 
-MIT
+MIT。见 [LICENSE](LICENSE)。

@@ -801,6 +801,63 @@ test {
 }
 
 // ===========================================================================
+// 27. Binary optional marker safety
+// ===========================================================================
+section("27. Binary optional marker safety")
+
+test {
+    let v: AsonValue = .array([
+        .object(["count": .null]),
+        .object(["count": .int(4_294_967_295)])
+    ])
+    let bin = try encodeBinary(v)
+    let d = try decodeBinary(bin)
+    assertEq(d, v, "binary optional int should not collide with null marker")
+}
+
+// ===========================================================================
+// 28. Integer overflow handling
+// ===========================================================================
+section("28. Integer overflow handling")
+
+test {
+    assertThrows({ _ = try decode("{value:int}:(9223372036854775808)") }, "int overflow should throw")
+}
+
+test {
+    assertThrows({ _ = try decode("{value:uint}:(18446744073709551616)") }, "uint overflow should throw")
+}
+
+// ===========================================================================
+// 29. Slice schema inference
+// ===========================================================================
+section("29. Slice schema inference")
+
+test {
+    let v: AsonValue = .array([
+        .object(["id": .int(1), "name": .string("Alice")]),
+        .object(["id": .int(2), "email": .string("alice@example.com")])
+    ])
+    let text = try encodeTyped(v)
+    let d = try decode(text)
+    let expected: AsonValue = .array([
+        .object(["email": .null, "id": .int(1), "name": .string("Alice")]),
+        .object(["email": .string("alice@example.com"), "id": .int(2), "name": .null])
+    ])
+    assertEq(d, expected, "slice schema should promote missing fields to optional")
+}
+
+test {
+    let v: AsonValue = .array([
+        .object(["id": .int(1)]),
+        .object(["id": .object(["nested": .int(2)])])
+    ])
+    assertThrows({ _ = try encode(v) }, "incompatible slice field types should throw")
+    assertThrows({ _ = try encodeTyped(v) }, "incompatible typed slice field types should throw")
+    assertThrows({ _ = try encodeBinary(v) }, "incompatible slice field types should throw in binary mode")
+}
+
+// ===========================================================================
 // Summary
 // ===========================================================================
 

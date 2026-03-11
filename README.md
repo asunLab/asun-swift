@@ -6,7 +6,7 @@ Swift implementation for [ASON](https://github.com/ason-lab/ason), focused on lo
 
 ## Highlights
 
-- Zero-copy oriented parser over UTF-8 bytes (`Array<UInt8>` + index cursor)
+- UTF-8 byte-buffer parser with explicit cursor-based scanning
 - SIMD fast-path for special-character detection during string quoting
 - No JSON bridge in hot paths (`encode`/`decode`/`encodeBinary`/`decodeBinary`)
 - Schema-first tuple encoding to reduce repeated field-name overhead
@@ -50,6 +50,12 @@ swift run cross_compat
 swift run bench -c release
 ```
 
+## Testing
+
+```bash
+swift run run_tests
+```
+
 ## Performance Advantages
 
 - Fewer transient allocations by parsing directly on byte buffers.
@@ -66,4 +72,4 @@ swift run bench -c release
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).
