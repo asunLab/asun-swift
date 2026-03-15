@@ -12,6 +12,8 @@ Swift implementation for [ASON](https://github.com/ason-lab/ason), focused on lo
 - Schema-first tuple encoding to reduce repeated field-name overhead
 - Typed and untyped text modes + pretty format
 - Binary codec with typed schema header for direct roundtrip
+- Follows the latest ASON spec: schema annotations use `@`, and complex fields keep the required `@{}` / `@[]` structural scaffold
+- No standalone `map` type; dictionary-like data should be modeled as arrays of key-value tuples such as `attrs@[{key@str,value@int}]`
 
 ## API
 
@@ -39,6 +41,13 @@ let typed = try encodeTyped(user)
 let parsed = try decode(typed)
 let bin = try encodeBinary(user)
 let back = try decodeBinary(bin)
+```
+
+```swift
+let team = try decode("""
+{name@str,members@[{id@int,name@str}],attrs@[{key@str,value@str}]}:
+  (core, [(1,Alice),(2,Bob)], [(region,apac),(tier,gold)])
+""")
 ```
 
 ## Examples

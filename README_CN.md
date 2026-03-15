@@ -11,6 +11,7 @@
 - Schema-first 元组编码，减少重复字段名开销
 - 支持 typed / untyped 文本输出与 pretty 格式
 - 二进制编解码带 typed schema 头，支持直接 roundtrip
+- 遵循最新 ASON 规范：Schema 注解使用 `@`，复杂类型必须保留 `@{}` / `@[]` 结构脚手架
 
 ## API
 
@@ -38,6 +39,13 @@ let typed = try encodeTyped(user)
 let parsed = try decode(typed)
 let bin = try encodeBinary(user)
 let back = try decodeBinary(bin)
+```
+
+```swift
+let team = try decode("""
+{name@str,members@[{id@int,name@str}],attrs@[{key@str,value@str}]}:
+  (core, [(1,Alice),(2,Bob)], [(region,apac),(tier,gold)])
+""")
 ```
 
 ## 示例

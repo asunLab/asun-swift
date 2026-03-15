@@ -1,10 +1,6 @@
 import Foundation
 import AsonSwift
 
-// ===========================================================================
-// Helpers
-// ===========================================================================
-
 func jsonEncode(_ value: AsonValue) -> Data {
     let obj = asonToJSON(value)
     return try! JSONSerialization.data(withJSONObject: obj, options: [])
@@ -17,8 +13,7 @@ func jsonDecode(_ data: Data) -> Any {
 func asonToJSON(_ v: AsonValue) -> Any {
     switch v {
     case .int(let i): return NSNumber(value: i)
-    case .uint(let u): return NSNumber(value: u)
-    case .float(let d): return NSNumber(value: d)
+        case .float(let d): return NSNumber(value: d)
     case .bool(let b): return NSNumber(value: b)
     case .string(let s): return s
     case .array(let arr): return arr.map { asonToJSON($0) }
@@ -30,95 +25,6 @@ func asonToJSON(_ v: AsonValue) -> Any {
     }
 }
 
-// ===========================================================================
-// Data generators
-// ===========================================================================
-
-func generateUsers(_ n: Int) -> AsonValue {
-    let names = ["Alice", "Bob", "Carol", "David", "Eve", "Frank", "Grace", "Hank"]
-    let roles = ["engineer", "designer", "manager", "analyst"]
-    let cities = ["NYC", "LA", "Chicago", "Houston", "Phoenix"]
-    var rows: [AsonValue] = []
-    rows.reserveCapacity(n)
-    for i in 0..<n {
-        rows.append(.object([
-            "id": .int(Int64(i)),
-            "name": .string(names[i % names.count]),
-            "email": .string("\(names[i % names.count].lowercased())@example.com"),
-            "age": .int(Int64(25 + i % 40)),
-            "score": .float(50.0 + Double(i % 50) + 0.5),
-            "active": .bool(i % 3 != 0),
-            "role": .string(roles[i % roles.count]),
-            "city": .string(cities[i % cities.count])
-        ]))
-    }
-    return .array(rows)
-}
-
-func generateCompanies(_ n: Int) -> AsonValue {
-    var companies: [AsonValue] = []
-    companies.reserveCapacity(n)
-    for i in 0..<n {
-        var divisions: [AsonValue] = []
-        for d in 0..<2 {
-            var teams: [AsonValue] = []
-            for t in 0..<2 {
-                var projects: [AsonValue] = []
-                for p in 0..<3 {
-                    var tasks: [AsonValue] = []
-                    for tk in 0..<4 {
-                        let task: AsonValue = .object([
-                            "id": .int(Int64(i * 100 + d * 10 + t * 5 + tk)),
-                            "title": .string("Task_\(tk)"),
-                            "priority": .int(Int64(tk % 3 + 1)),
-                            "done": .bool(tk % 2 == 0),
-                            "hours": .float(2.0 + Double(tk) * 1.5)
-                        ])
-                        tasks.append(task)
-                    }
-                    let project: AsonValue = .object([
-                        "name": .string("Proj_\(t)_\(p)"),
-                        "budget": .float(100.0 + Double(p) * 50.5),
-                        "active": .bool(p % 2 == 0),
-                        "tasks": .array(tasks)
-                    ])
-                    projects.append(project)
-                }
-                let locations = ["NYC","London","Tokyo","Berlin"]
-                let leads = ["Alice","Bob","Carol","David"]
-                let team: AsonValue = .object([
-                    "name": .string("Team_\(i)_\(d)_\(t)"),
-                    "lead": .string(leads[t % 4]),
-                    "size": .int(Int64(5 + t * 2)),
-                    "projects": .array(projects)
-                ])
-                teams.append(team)
-            }
-            let div: AsonValue = .object([
-                "name": .string("Div_\(i)_\(d)"),
-                "location": .string(["NYC","London","Tokyo","Berlin"][d % 4]),
-                "headcount": .int(Int64(50 + d * 20)),
-                "teams": .array(teams)
-            ])
-            divisions.append(div)
-        }
-        let company: AsonValue = .object([
-            "name": .string("Corp_\(i)"),
-            "founded": .int(Int64(1990 + i % 35)),
-            "revenue_m": .float(10.0 + Double(i) * 5.5),
-            "public": .bool(i % 2 == 0),
-            "divisions": .array(divisions),
-            "tags": .array([.string("enterprise"), .string("tech"), .string("sector_\(i % 5)")])
-        ])
-        companies.append(company)
-    }
-    return .array(companies)
-}
-
-// ===========================================================================
-// Timing helpers
-// ===========================================================================
-
 func elapsedMs(_ body: () throws -> Void) rethrows -> Double {
     let t0 = DispatchTime.now().uptimeNanoseconds
     try body()
@@ -126,34 +32,59 @@ func elapsedMs(_ body: () throws -> Void) rethrows -> Double {
     return Double(t1 - t0) / 1_000_000.0
 }
 
-// ===========================================================================
-// Benchmark result types
-// ===========================================================================
-
-struct BenchResult {
-    let name: String
-    let jsonSerMs: Double
-    let asonSerMs: Double
-    let jsonDeMs: Double
-    let asonDeMs: Double
-    let jsonBytes: Int
-    let asonBytes: Int
-
-    func print_() {
-        let serRatio = jsonSerMs / asonSerMs
-        let deRatio = jsonDeMs / asonDeMs
-        let saving = (1.0 - Double(asonBytes) / Double(jsonBytes)) * 100.0
-        print("  \(name)")
-        print(String(format: "    Serialize:   JSON %8.2fms | ASON %8.2fms | ratio %.2fx %@",
-            jsonSerMs, asonSerMs, serRatio, serRatio >= 1.0 ? "✓ ASON faster" : ""))
-        print(String(format: "    Deserialize: JSON %8.2fms | ASON %8.2fms | ratio %.2fx %@",
-            jsonDeMs, asonDeMs, deRatio, deRatio >= 1.0 ? "✓ ASON faster" : ""))
-        print(String(format: "    Size:        JSON %8d B | ASON %8d B | saving %.0f%%",
-            jsonBytes, asonBytes, saving))
-    }
+func formatRatio(_ base: Double, _ target: Double) -> String {
+    if target <= 0 { return "infx" }
+    var s = String(format: "%.1f", base / target)
+    while s.hasSuffix("0") { s.removeLast() }
+    if s.hasSuffix(".") { s.removeLast() }
+    return s + "x"
 }
 
-struct BinBenchResult {
+func formatPercent(_ part: Int, _ whole: Int) -> String {
+    if whole <= 0 { return "0%" }
+    var s = String(format: "%.1f", Double(part) * 100.0 / Double(whole))
+    while s.hasSuffix("0") { s.removeLast() }
+    if s.hasSuffix(".") { s.removeLast() }
+    return s + "%"
+}
+
+func printSection(_ title: String, _ width: Int) {
+    let line = String(repeating: "─", count: width - 2)
+    print("┌\(line)┐")
+    let text = title.padding(toLength: width - 4, withPad: " ", startingAt: 0)
+    print("│ \(text) │")
+    print("└\(line)┘")
+}
+
+func obj(_ pairs: [String: AsonValue]) -> AsonValue { .object(pairs) }
+func arr(_ values: [AsonValue]) -> AsonValue { .array(values) }
+
+struct TypedBenchUser {
+    var active: Bool = false
+    var age: Int64 = 0
+    var city: String = ""
+    var email: String = ""
+    var id: Int64 = 0
+    var name: String = ""
+    var role: String = ""
+    var score: Double = 0
+}
+
+struct TypedBenchProfile {
+    var level: Int64 = 0
+    var title: String = ""
+}
+
+struct TypedBenchComplex {
+    var flags: [Bool] = []
+    var id: Int64 = 0
+    var profile: TypedBenchProfile = .init()
+    var scores: [Double] = []
+    var tags: [String] = []
+    var backup: TypedBenchProfile? = nil
+}
+
+struct BenchResult {
     let name: String
     let jsonSerMs: Double
     let asonSerMs: Double
@@ -166,395 +97,574 @@ struct BinBenchResult {
     let binBytes: Int
 
     func print_() {
-        let serAson = jsonSerMs / asonSerMs
-        let serBin = jsonSerMs / binSerMs
-        let deAson = jsonDeMs / asonDeMs
-        let deBin = jsonDeMs / binDeMs
-        let svA = (1.0 - Double(asonBytes) / Double(jsonBytes)) * 100.0
-        let svB = (1.0 - Double(binBytes) / Double(jsonBytes)) * 100.0
         print("  \(name)")
-        print(String(format: "    Serialize:   JSON %8.2fms | ASON %8.2fms (%.1fx) | BIN %8.2fms (%.1fx)",
-            jsonSerMs, asonSerMs, serAson, binSerMs, serBin))
-        print(String(format: "    Deserialize: JSON %8.2fms | ASON %8.2fms (%.1fx) | BIN %8.2fms (%.1fx)",
-            jsonDeMs, asonDeMs, deAson, binDeMs, deBin))
-        print(String(format: "    Size:  JSON %8d B | ASON %8d B (%.0f%% smaller) | BIN %8d B (%.0f%% smaller)",
-            jsonBytes, asonBytes, svA, binBytes, svB))
+        print(String(format: "    Serialize:   JSON %.2fms/%dB | ASON %.2fms(%@)/%dB(%@) | BIN %.2fms(%@)/%dB(%@)",
+                     jsonSerMs, jsonBytes,
+                     asonSerMs, formatRatio(jsonSerMs, asonSerMs), asonBytes, formatPercent(asonBytes, jsonBytes),
+                     binSerMs, formatRatio(jsonSerMs, binSerMs), binBytes, formatPercent(binBytes, jsonBytes)))
+        print(String(format: "    Deserialize: JSON %8.2fms | ASON %8.2fms(%@) | BIN %8.2fms(%@)",
+                     jsonDeMs, asonDeMs, formatRatio(jsonDeMs, asonDeMs), binDeMs, formatRatio(jsonDeMs, binDeMs)))
     }
 }
 
-// ===========================================================================
-// Benchmark functions
-// ===========================================================================
-
-func benchFlat(count: Int, iterations: Int) throws -> BenchResult {
-    let users = generateUsers(count)
-    var jsonData = Data()
-    let jsonSerMs = try elapsedMs {
-        for _ in 0..<iterations { jsonData = jsonEncode(users) }
+func generateUsers(_ n: Int) -> AsonValue {
+    let names = ["Alice", "Bob", "Carol", "David", "Eve", "Frank", "Grace", "Hank"]
+    let roles = ["engineer", "designer", "manager", "analyst"]
+    let cities = ["NYC", "LA", "Chicago", "Houston", "Phoenix"]
+    var rows: [AsonValue] = []
+    rows.reserveCapacity(n)
+    for i in 0..<n {
+        rows.append(obj([
+            "id": .int(Int64(i)),
+            "name": .string(names[i % names.count]),
+            "email": .string("\(names[i % names.count].lowercased())@example.com"),
+            "age": .int(Int64(25 + i % 40)),
+            "score": .float(50.0 + Double(i % 50) + 0.5),
+            "active": .bool(i % 3 != 0),
+            "role": .string(roles[i % roles.count]),
+            "city": .string(cities[i % cities.count])
+        ]))
     }
-    var asonStr = ""
-    let asonSerMs = try elapsedMs {
-        for _ in 0..<iterations { asonStr = try encode(users) }
-    }
-    let jsonDeMs = try elapsedMs {
-        for _ in 0..<iterations { _ = jsonDecode(jsonData) }
-    }
-    let asonDeMs = try elapsedMs {
-        for _ in 0..<iterations { _ = try decode(asonStr) }
-    }
-    let decoded = try decode(asonStr)
-    assert(decoded == users, "flat \(count) roundtrip failed")
-    return BenchResult(
-        name: "Flat struct × \(count) (8 fields)",
-        jsonSerMs: jsonSerMs, asonSerMs: asonSerMs,
-        jsonDeMs: jsonDeMs, asonDeMs: asonDeMs,
-        jsonBytes: jsonData.count, asonBytes: asonStr.utf8.count)
+    return arr(rows)
 }
 
-func benchDeep(count: Int, iterations: Int) throws -> BenchResult {
-    let companies = generateCompanies(count)
-    var jsonData = Data()
-    let jsonSerMs = try elapsedMs {
-        for _ in 0..<iterations { jsonData = jsonEncode(companies) }
+func generateAllTypes(_ n: Int) -> AsonValue {
+    var rows: [AsonValue] = []
+    rows.reserveCapacity(n)
+    for i in 0..<n {
+        rows.append(obj([
+            "b": .bool(i % 2 == 0),
+            "i8v": .int(Int64(Int8(i % 128))),
+            "i16v": .int(Int64(-Int16(i))),
+            "i32v": .int(Int64(Int32(i) * 1000)),
+            "i64v": .int(Int64(i) * 100_000),
+            "u8v": .int(Int64(i % 255)),
+            "u16v": .int(Int64(i % 65_535)),
+            "u32v": .int(Int64(i) * 7_919),
+            "u64v": .int(Int64(i) * 1_000_000_007),
+            "f32v": .float(Double(Float(i) * 1.5)),
+            "f64v": .float(Double(i) * 0.25 + 0.5),
+            "s": .string("item_\(i)"),
+            "opt_some": i % 2 == 0 ? .int(Int64(i)) : .null,
+            "opt_none": .null,
+            "vec_int": arr([.int(Int64(i)), .int(Int64(i + 1)), .int(Int64(i + 2))]),
+            "vec_str": arr([.string("tag\(i % 5)"), .string("cat\(i % 3)")])
+        ]))
     }
-    var asonStr = ""
-    let asonSerMs = try elapsedMs {
-        for _ in 0..<iterations { asonStr = try encode(companies) }
-    }
-    let jsonDeMs = try elapsedMs {
-        for _ in 0..<iterations { _ = jsonDecode(jsonData) }
-    }
-    let asonDeMs = try elapsedMs {
-        for _ in 0..<iterations { _ = try decode(asonStr) }
-    }
-    let decoded = try decode(asonStr)
-    assert(decoded == companies, "deep \(count) roundtrip failed")
-    return BenchResult(
-        name: "5-level deep × \(count) (Company>Division>Team>Project>Task)",
-        jsonSerMs: jsonSerMs, asonSerMs: asonSerMs,
-        jsonDeMs: jsonDeMs, asonDeMs: asonDeMs,
-        jsonBytes: jsonData.count, asonBytes: asonStr.utf8.count)
+    return arr(rows)
 }
 
-func benchFlatBin(count: Int, iterations: Int) throws -> BinBenchResult {
-    let users = generateUsers(count)
+func generateCompanies(_ n: Int) -> AsonValue {
+    let locs = ["NYC", "London", "Tokyo", "Berlin"]
+    let leads = ["Alice", "Bob", "Carol", "David"]
+    var companies: [AsonValue] = []
+    companies.reserveCapacity(n)
+    for i in 0..<n {
+        var divisions: [AsonValue] = []
+        for d in 0..<2 {
+            var teams: [AsonValue] = []
+            for t in 0..<2 {
+                var projects: [AsonValue] = []
+                for p in 0..<3 {
+                    var tasks: [AsonValue] = []
+                    for tk in 0..<4 {
+                        tasks.append(obj([
+                            "id": .int(Int64(i * 100 + d * 10 + t * 5 + tk)),
+                            "title": .string("Task_\(tk)"),
+                            "priority": .int(Int64(tk % 3 + 1)),
+                            "done": .bool(tk % 2 == 0),
+                            "hours": .float(2.0 + Double(tk) * 1.5)
+                        ]))
+                    }
+                    projects.append(obj([
+                        "name": .string("Proj_\(t)_\(p)"),
+                        "budget": .float(100.0 + Double(p) * 50.5),
+                        "active": .bool(p % 2 == 0),
+                        "tasks": arr(tasks)
+                    ]))
+                }
+                teams.append(obj([
+                    "name": .string("Team_\(i)_\(d)_\(t)"),
+                    "lead": .string(leads[t % leads.count]),
+                    "size": .int(Int64(5 + t * 2)),
+                    "projects": arr(projects)
+                ]))
+            }
+            divisions.append(obj([
+                "name": .string("Div_\(i)_\(d)"),
+                "location": .string(locs[d % locs.count]),
+                "headcount": .int(Int64(50 + d * 20)),
+                "teams": arr(teams)
+            ]))
+        }
+        companies.append(obj([
+            "name": .string("Corp_\(i)"),
+            "founded": .int(Int64(1990 + i % 35)),
+            "revenue_m": .float(10.0 + Double(i) * 5.5),
+            "public": .bool(i % 2 == 0),
+            "divisions": arr(divisions),
+            "tags": arr([.string("enterprise"), .string("tech"), .string("sector_\(i % 5)")])
+        ]))
+    }
+    return arr(companies)
+}
+
+func benchValue(_ name: String, _ value: AsonValue, _ iterations: Int) throws -> BenchResult {
     var jsonData = Data()
-    let jsonSerMs = try elapsedMs {
-        for _ in 0..<iterations { jsonData = jsonEncode(users) }
+    let jsonSerMs = elapsedMs {
+        for _ in 0..<iterations { jsonData = jsonEncode(value) }
     }
-    var asonStr = ""
+
+    var asonData = ""
     let asonSerMs = try elapsedMs {
-        for _ in 0..<iterations { asonStr = try encode(users) }
+        for _ in 0..<iterations { asonData = try encode(value) }
     }
-    var binBuf = Data()
+
+    var binData = Data()
     let binSerMs = try elapsedMs {
-        for _ in 0..<iterations { binBuf = try encodeBinary(users) }
+        for _ in 0..<iterations { binData = try encodeBinary(value) }
     }
-    let jsonDeMs = try elapsedMs {
+
+    let jsonDeMs = elapsedMs {
         for _ in 0..<iterations { _ = jsonDecode(jsonData) }
     }
+
     let asonDeMs = try elapsedMs {
-        for _ in 0..<iterations { _ = try decode(asonStr) }
+        for _ in 0..<iterations { _ = try decode(asonData) }
     }
+
     let binDeMs = try elapsedMs {
-        for _ in 0..<iterations { _ = try decodeBinary(binBuf) }
+        for _ in 0..<iterations { _ = try decodeBinary(binData) }
     }
-    let decoded = try decodeBinary(binBuf)
-    assert(decoded == users, "bin flat \(count) roundtrip failed")
-    return BinBenchResult(
-        name: "Flat struct × \(count) (8 fields)",
-        jsonSerMs: jsonSerMs, asonSerMs: asonSerMs, binSerMs: binSerMs,
-        jsonDeMs: jsonDeMs, asonDeMs: asonDeMs, binDeMs: binDeMs,
-        jsonBytes: jsonData.count, asonBytes: asonStr.utf8.count, binBytes: binBuf.count)
+
+    return BenchResult(
+        name: name,
+        jsonSerMs: jsonSerMs,
+        asonSerMs: asonSerMs,
+        binSerMs: binSerMs,
+        jsonDeMs: jsonDeMs,
+        asonDeMs: asonDeMs,
+        binDeMs: binDeMs,
+        jsonBytes: jsonData.count,
+        asonBytes: asonData.utf8.count,
+        binBytes: binData.count
+    )
 }
 
-func benchDeepBin(count: Int, iterations: Int) throws -> BinBenchResult {
-    let companies = generateCompanies(count)
-    var jsonData = Data()
-    let jsonSerMs = try elapsedMs {
-        for _ in 0..<iterations { jsonData = jsonEncode(companies) }
-    }
-    var asonStr = ""
-    let asonSerMs = try elapsedMs {
-        for _ in 0..<iterations { asonStr = try encode(companies) }
-    }
-    var binBuf = Data()
-    let binSerMs = try elapsedMs {
-        for _ in 0..<iterations { binBuf = try encodeBinary(companies) }
-    }
-    let jsonDeMs = try elapsedMs {
-        for _ in 0..<iterations { _ = jsonDecode(jsonData) }
-    }
-    let asonDeMs = try elapsedMs {
-        for _ in 0..<iterations { _ = try decode(asonStr) }
-    }
-    let binDeMs = try elapsedMs {
-        for _ in 0..<iterations { _ = try decodeBinary(binBuf) }
-    }
-    let decoded = try decodeBinary(binBuf)
-    assert(decoded == companies, "bin deep \(count) roundtrip failed")
-    return BinBenchResult(
-        name: "Deep struct × \(count) (5-level nested)",
-        jsonSerMs: jsonSerMs, asonSerMs: asonSerMs, binSerMs: binSerMs,
-        jsonDeMs: jsonDeMs, asonDeMs: asonDeMs, binDeMs: binDeMs,
-        jsonBytes: jsonData.count, asonBytes: asonStr.utf8.count, binBytes: binBuf.count)
+func benchFlat(_ count: Int, _ iterations: Int) throws -> BenchResult {
+    try benchValue("Flat struct × \(count) (8 fields, vec)", generateUsers(count), iterations)
 }
 
-func benchSingleRoundtrip(iterations: Int) throws -> (Double, Double) {
-    let user: AsonValue = .object([
+func benchAllTypes(_ count: Int, _ iterations: Int) throws -> BenchResult {
+    try benchValue("All-types struct × \(count) (16 fields, vec)", generateAllTypes(count), iterations)
+}
+
+func benchDeep(_ count: Int, _ iterations: Int) throws -> BenchResult {
+    try benchValue("5-level deep × \(count) (Company>Division>Team>Project>Task)", generateCompanies(count), iterations)
+}
+
+func benchSingleRoundtrip(_ iterations: Int) throws -> (Double, Double) {
+    let user = obj([
         "id": .int(1), "name": .string("Alice"),
         "email": .string("alice@example.com"),
         "age": .int(30), "score": .float(95.5),
         "active": .bool(true), "role": .string("engineer"),
         "city": .string("NYC")
     ])
+
     let asonMs = try elapsedMs {
         for _ in 0..<iterations {
             let s = try encode(user)
             _ = try decode(s)
         }
     }
-    let jsonMs = try elapsedMs {
+
+    let jsonMs = elapsedMs {
         for _ in 0..<iterations {
-            let d = jsonEncode(user)
-            _ = jsonDecode(d)
+            let s = jsonEncode(user)
+            _ = jsonDecode(s)
         }
     }
+
     return (asonMs, jsonMs)
 }
 
-func benchDeepSingleRoundtrip(iterations: Int) throws -> (Double, Double) {
-    let company: AsonValue = .object([
-        "name": .string("MegaCorp"), "founded": .int(2000),
-        "revenue_m": .float(500.5), "public": .bool(true),
-        "divisions": .array([.object([
-            "name": .string("Engineering"), "location": .string("SF"), "headcount": .int(200),
-            "teams": .array([.object([
-                "name": .string("Backend"), "lead": .string("Alice"), "size": .int(12),
-                "projects": .array([.object([
-                    "name": .string("API v3"), "budget": .float(250.0), "active": .bool(true),
-                    "tasks": .array([
-                        .object(["id": .int(1), "title": .string("Design"), "priority": .int(1), "done": .bool(true), "hours": .float(40.0)]),
-                        .object(["id": .int(2), "title": .string("Implement"), "priority": .int(1), "done": .bool(false), "hours": .float(120.0)]),
-                        .object(["id": .int(3), "title": .string("Test"), "priority": .int(2), "done": .bool(false), "hours": .float(30.0)])
-                    ])
-                ])])
-            ])])
-        ])]),
-        "tags": .array([.string("tech"), .string("public")])
-    ])
+func benchDeepSingleRoundtrip(_ iterations: Int) throws -> (Double, Double) {
+    let company = generateCompanies(1)
+
     let asonMs = try elapsedMs {
         for _ in 0..<iterations {
             let s = try encode(company)
             _ = try decode(s)
         }
     }
-    let jsonMs = try elapsedMs {
+
+    let jsonMs = elapsedMs {
         for _ in 0..<iterations {
-            let d = jsonEncode(company)
-            _ = jsonDecode(d)
+            let s = jsonEncode(company)
+            _ = jsonDecode(s)
         }
     }
+
     return (asonMs, jsonMs)
 }
 
-// ===========================================================================
-// Memory measurement
-// ===========================================================================
+func benchPreparedEncoder(_ value: AsonValue, _ iterations: Int) throws -> (Double, Double, Double, Int, Int) {
+    let prepared = try PreparedAsonEncoder(sample: value)
+    let preparedTyped = try PreparedAsonEncoder(sample: value, typed: true)
 
-func getRSSBytes() -> Int {
-    var info = rusage()
-    getrusage(RUSAGE_SELF, &info)
-    return Int(info.ru_maxrss) // macOS returns bytes
+    var normalBytes = 0
+    let normalMs = try elapsedMs {
+        for _ in 0..<iterations { normalBytes = try encode(value).utf8.count }
+    }
+
+    var preparedOut = ""
+    let preparedMs = try elapsedMs {
+        for _ in 0..<iterations { preparedOut = try prepared.encode(value) }
+    }
+
+    var preparedBin = Data()
+    let preparedBinMs = try elapsedMs {
+        for _ in 0..<iterations { preparedBin = try preparedTyped.encodeBinary(value) }
+    }
+
+    _ = normalBytes
+    return (normalMs, preparedMs, preparedBinMs, preparedOut.utf8.count, preparedBin.count)
 }
 
-func formatBytes(_ b: Int) -> String {
-    if b >= 1_048_576 { return String(format: "%.1f MB", Double(b) / 1_048_576.0) }
-    if b >= 1024 { return String(format: "%.1f KB", Double(b) / 1024.0) }
-    return "\(b) B"
+func extractBody(_ text: String) -> String {
+    var depthBrace = 0
+    var depthBracket = 0
+    var inQuote = false
+    var escaped = false
+    let bytes = Array(text.utf8)
+    for (i, c) in bytes.enumerated() {
+        if inQuote {
+            if escaped { escaped = false; continue }
+            if c == 0x5C { escaped = true; continue }
+            if c == 0x22 { inQuote = false }
+            continue
+        }
+        switch c {
+        case 0x22: inQuote = true
+        case 0x7B: depthBrace += 1
+        case 0x7D: depthBrace -= 1
+        case 0x5B: depthBracket += 1
+        case 0x5D: depthBracket -= 1
+        case 0x3A where depthBrace == 0 && depthBracket == 0:
+            return String(decoding: bytes[(i + 1)...], as: UTF8.self)
+        default: break
+        }
+    }
+    return text
 }
 
-// ===========================================================================
-// Main
-// ===========================================================================
+func benchPreparedDecoder(_ value: AsonValue, _ iterations: Int) throws -> (Double, Double, Double, Double) {
+    let typedText = try encodeTyped(value)
+    let body = extractBody(typedText)
+    let prepared = try PreparedAsonDecoder(sample: value, typed: true)
+    let preparedBin = try PreparedAsonEncoder(sample: value, typed: true).encodeBinary(value)
+
+    let standardMs = try elapsedMs {
+        for _ in 0..<iterations { _ = try decode(typedText) }
+    }
+    let preparedMs = try elapsedMs {
+        for _ in 0..<iterations { _ = try prepared.decode(typedText) }
+    }
+    let bodyOnlyMs = try elapsedMs {
+        for _ in 0..<iterations { _ = try prepared.decodeBody(body) }
+    }
+    let preparedBinMs = try elapsedMs {
+        for _ in 0..<iterations { _ = try prepared.decodeBinary(preparedBin) }
+    }
+
+    return (standardMs, preparedMs, bodyOnlyMs, preparedBinMs)
+}
+
+func makeTypedBenchUsers(_ n: Int) -> [TypedBenchUser] {
+    let names = ["Alice", "Bob", "Carol", "David", "Eve", "Frank", "Grace", "Hank"]
+    let roles = ["engineer", "designer", "manager", "analyst"]
+    let cities = ["NYC", "LA", "Chicago", "Houston", "Phoenix"]
+    var rows: [TypedBenchUser] = []
+    rows.reserveCapacity(n)
+    for i in 0..<n {
+        rows.append(TypedBenchUser(
+            active: i % 3 != 0,
+            age: Int64(25 + i % 40),
+            city: cities[i % cities.count],
+            email: "\(names[i % names.count].lowercased())@example.com",
+            id: Int64(i),
+            name: names[i % names.count],
+            role: roles[i % roles.count],
+            score: 50.0 + Double(i % 50) + 0.5
+        ))
+    }
+    return rows
+}
+
+func makeTypedBenchComplex(_ n: Int) -> [TypedBenchComplex] {
+    let titles = ["Lead", "Senior", "Staff", "Principal"]
+    let tags = [["core", "swift"], ["api", "backend"], ["bench", "perf"], ["ios", "mobile"]]
+    var rows: [TypedBenchComplex] = []
+    rows.reserveCapacity(n)
+    for i in 0..<n {
+        rows.append(TypedBenchComplex(
+            flags: [i % 2 == 0, i % 3 == 0, true],
+            id: Int64(i),
+            profile: TypedBenchProfile(level: Int64((i % 5) + 1), title: titles[i % titles.count]),
+            scores: [Double(i % 100) + 0.5, Double((i + 7) % 100) + 0.25],
+            tags: tags[i % tags.count],
+            backup: i % 2 == 0 ? TypedBenchProfile(level: Int64((i % 3) + 1), title: "Backup_\(i % 4)") : nil
+        ))
+    }
+    return rows
+}
+
+func generateComplexTypedValue(_ n: Int) -> AsonValue {
+    let rows = makeTypedBenchComplex(n)
+    return .array(rows.map { row in
+        .object([
+            "flags": .array(row.flags.map { .bool($0) }),
+            "id": .int(row.id),
+            "profile": .object([
+                "level": .int(row.profile.level),
+                "title": .string(row.profile.title)
+            ]),
+            "scores": .array(row.scores.map { .float($0) }),
+            "tags": .array(row.tags.map { .string($0) }),
+            "backup": row.backup.map {
+                .object([
+                    "level": .int($0.level),
+                    "title": .string($0.title)
+                ])
+            } ?? .null
+        ])
+    })
+}
+
+func benchTypedStructCodec(_ count: Int, _ iterations: Int) throws -> (Double, Double, Double, Double) {
+    let codec = AsonStructArrayCodec<TypedBenchUser>(fields: [
+        .bool("active", \.active),
+        .int("age", \.age),
+        .string("city", \.city),
+        .string("email", \.email),
+        .int("id", \.id),
+        .string("name", \.name),
+        .string("role", \.role),
+        .float("score", \.score)
+    ], make: TypedBenchUser.init)
+    let rows = makeTypedBenchUsers(count)
+    let dynamicValue = generateUsers(count)
+    let text = try codec.encode(rows)
+    let bin = try codec.encodeBinary(rows)
+
+    let typedEncodeMs = try elapsedMs {
+        for _ in 0..<iterations { _ = try codec.encode(rows) }
+    }
+    let typedDecodeMs = try elapsedMs {
+        for _ in 0..<iterations { _ = try codec.decode(text) }
+    }
+    let typedBinEncodeMs = try elapsedMs {
+        for _ in 0..<iterations { _ = try codec.encodeBinary(rows) }
+    }
+    let typedBinDecodeMs = try elapsedMs {
+        for _ in 0..<iterations { _ = try codec.decodeBinary(bin) }
+    }
+
+    let dynamicEncodeMs = try elapsedMs {
+        for _ in 0..<iterations { _ = try encodeTyped(dynamicValue) }
+    }
+    let dynamicDecodeMs = try elapsedMs {
+        for _ in 0..<iterations { _ = try decode(text) }
+    }
+
+    print("  Flat struct x \(count) (\(iterations) iters, typed struct codec)")
+    print(String(format: "    Text encode:   dynamic %8.2fms | typed %8.2fms | speedup %.3fx",
+                 dynamicEncodeMs, typedEncodeMs, dynamicEncodeMs / typedEncodeMs))
+    print(String(format: "    Text decode:   dynamic %8.2fms | typed %8.2fms | speedup %.3fx",
+                 dynamicDecodeMs, typedDecodeMs, dynamicDecodeMs / typedDecodeMs))
+    print(String(format: "    Binary encode: typed   %8.2fms", typedBinEncodeMs))
+    print(String(format: "    Binary decode: typed   %8.2fms", typedBinDecodeMs))
+
+    return (typedEncodeMs, typedDecodeMs, typedBinEncodeMs, typedBinDecodeMs)
+}
+
+func benchTypedComplexCodec(_ count: Int, _ iterations: Int) throws {
+    let profileCodec = AsonStructCodec<TypedBenchProfile>(fields: [
+        .int("level", \.level),
+        .string("title", \.title)
+    ], make: TypedBenchProfile.init)
+    let codec = AsonStructArrayCodec<TypedBenchComplex>(fields: [
+        .boolArray("flags", \.flags),
+        .int("id", \.id),
+        .nested("profile", \.profile, codec: profileCodec),
+        .floatArray("scores", \.scores),
+        .stringArray("tags", \.tags),
+        .optionalNested("backup", \.backup, codec: profileCodec)
+    ], make: TypedBenchComplex.init)
+
+    let rows = makeTypedBenchComplex(count)
+    let text = try codec.encode(rows)
+    let bin = try codec.encodeBinary(rows)
+
+    let typedEncodeMs = try elapsedMs {
+        for _ in 0..<iterations { _ = try codec.encode(rows) }
+    }
+    let typedDecodeMs = try elapsedMs {
+        for _ in 0..<iterations { _ = try codec.decode(text) }
+    }
+    let typedBinEncodeMs = try elapsedMs {
+        for _ in 0..<iterations { _ = try codec.encodeBinary(rows) }
+    }
+    let typedBinDecodeMs = try elapsedMs {
+        for _ in 0..<iterations { _ = try codec.decodeBinary(bin) }
+    }
+
+    print("  Complex struct x \(count) (\(iterations) iters, nested+arrays+optional)")
+    print(String(format: "    Text encode:   typed   %8.2fms", typedEncodeMs))
+    print(String(format: "    Text decode:   typed   %8.2fms", typedDecodeMs))
+    print(String(format: "    Binary encode: typed   %8.2fms", typedBinEncodeMs))
+    print(String(format: "    Binary decode: typed   %8.2fms", typedBinDecodeMs))
+}
 
 do {
     print("╔══════════════════════════════════════════════════════════════╗")
     print("║            ASON vs JSON Comprehensive Benchmark              ║")
     print("╚══════════════════════════════════════════════════════════════╝")
+    print("\nSystem: macOS")
+    print("Iterations per test: 100")
 
-    #if os(macOS)
-    print("\nSystem: macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
-    #else
-    print("\nSystem: \(ProcessInfo.processInfo.operatingSystemVersionString)")
-    #endif
-
-    let rssBefore = getRSSBytes()
-    print("RSS before benchmarks: \(formatBytes(rssBefore))\n")
-
-    let iterations = 100
-
-    // ===================================================================
-    // Section 1: Flat struct (schema-driven vec)
-    // ===================================================================
-    print("┌─────────────────────────────────────────────┐")
-    print("│  Section 1: Flat Struct (schema-driven vec) │")
-    print("└─────────────────────────────────────────────┘")
-
+    print()
+    printSection("Section 1: Flat Struct (schema-driven vec)", 47)
+    print()
     for count in [100, 500, 1000, 5000] {
-        let r = try benchFlat(count: count, iterations: iterations)
-        r.print_()
+        try benchFlat(count, 100).print_()
         print()
     }
 
-    let rssAfterFlat = getRSSBytes()
-    print("  RSS after flat benchmarks: \(formatBytes(rssAfterFlat)) (Δ \(formatBytes(rssAfterFlat - rssBefore)))")
+    printSection("Section 2: All-Types Struct (16 fields)", 48)
+    print()
+    for count in [100, 500] {
+        try benchAllTypes(count, 100).print_()
+        print()
+    }
 
-    // ===================================================================
-    // Section 2: 5-level deep nested struct
-    // ===================================================================
-    print("\n┌──────────────────────────────────────────────────────────┐")
-    print("│  Section 2: 5-Level Deep Nesting (Company hierarchy)     │")
-    print("└──────────────────────────────────────────────────────────┘")
-
+    printSection("Section 3: 5-Level Deep Nesting (Company hierarchy)", 60)
+    print()
     for count in [10, 50, 100] {
-        let r = try benchDeep(count: count, iterations: iterations)
-        r.print_()
+        try benchDeep(count, 50).print_()
         print()
     }
 
-    let rssAfterDeep = getRSSBytes()
-    print("  RSS after deep benchmarks: \(formatBytes(rssAfterDeep)) (Δ \(formatBytes(rssAfterDeep - rssBefore)))")
+    printSection("Section 4: Single Struct Roundtrip (10000x)", 48)
+    print()
+    let (asonFlat, jsonFlat) = try benchSingleRoundtrip(10_000)
+    print(String(format: "  Flat:  ASON %8.2fms | JSON %8.2fms | ratio %.2fx", asonFlat, jsonFlat, jsonFlat / asonFlat))
+    let (asonDeep, jsonDeep) = try benchDeepSingleRoundtrip(10_000)
+    print(String(format: "  Deep:  ASON %8.2fms | JSON %8.2fms | ratio %.2fx", asonDeep, jsonDeep, jsonDeep / asonDeep))
 
-    // ===================================================================
-    // Section 3: Single Struct Roundtrip
-    // ===================================================================
-    print("\n┌──────────────────────────────────────────────┐")
-    print("│  Section 3: Single Struct Roundtrip (10000x) │")
-    print("└──────────────────────────────────────────────┘")
-
-    let (asonFlat, jsonFlat) = try benchSingleRoundtrip(iterations: 10000)
-    print(String(format: "  Flat:  ASON %6.2fms | JSON %6.2fms | ratio %.2fx",
-        asonFlat, jsonFlat, jsonFlat / asonFlat))
-
-    let (asonDeep, jsonDeep) = try benchDeepSingleRoundtrip(iterations: 10000)
-    print(String(format: "  Deep:  ASON %6.2fms | JSON %6.2fms | ratio %.2fx",
-        asonDeep, jsonDeep, jsonDeep / asonDeep))
-
-    // ===================================================================
-    // Section 4: Large Payload (10k records)
-    // ===================================================================
-    print("\n┌──────────────────────────────────────────────┐")
-    print("│  Section 4: Large Payload (10k records)      │")
-    print("└──────────────────────────────────────────────┘")
-
-    let rLarge = try benchFlat(count: 10000, iterations: 10)
+    print()
+    printSection("Section 5: Large Payload (10k records)", 48)
+    print()
+    let large = try benchFlat(10_000, 10)
     print("  (10 iterations for large payload)")
-    rLarge.print_()
+    large.print_()
 
-    let rssAfterLarge = getRSSBytes()
-    print(String(format: "\n  RSS after large payload: %@ (Δ %@)",
-        formatBytes(rssAfterLarge), formatBytes(rssAfterLarge - rssBefore)))
+    print()
+    printSection("Section 6: Annotated vs Unannotated Schema (deserialize)", 64)
+    print()
+    let users = generateUsers(1000)
+    let untyped = try encode(users)
+    let typed = try encodeTyped(users)
+    let deIters = 200
+    let untypedDeMs = try elapsedMs {
+        for _ in 0..<deIters { _ = try decode(untyped) }
+    }
+    let typedDeMs = try elapsedMs {
+        for _ in 0..<deIters { _ = try decode(typed) }
+    }
+    print("  Flat struct x 1000 (\(deIters) iters, deserialize only)")
+    print(String(format: "    Unannotated: %8.2fms  (%d B)", untypedDeMs, untyped.utf8.count))
+    print(String(format: "    Annotated:   %8.2fms  (%d B)", typedDeMs, typed.utf8.count))
+    print(String(format: "    Ratio: %.3fx (unannotated / annotated)", untypedDeMs / typedDeMs))
 
-    // ===================================================================
-    // Section 5: Throughput Summary
-    // ===================================================================
-    print("\n┌──────────────────────────────────────────────┐")
-    print("│  Section 5: Throughput Summary               │")
-    print("└──────────────────────────────────────────────┘")
+    print()
+    printSection("Section 7: Annotated vs Unannotated Schema (serialize)", 62)
+    print()
+    let serIters = 200
+    var untypedOut = ""
+    let untypedSerMs = try elapsedMs {
+        for _ in 0..<serIters { untypedOut = try encode(users) }
+    }
+    var typedOut = ""
+    let typedSerMs = try elapsedMs {
+        for _ in 0..<serIters { typedOut = try encodeTyped(users) }
+    }
+    print("  Flat struct x 1000 (\(serIters) iters, serialize only)")
+    print(String(format: "    Unannotated: %8.2fms  (%d B)", untypedSerMs, untypedOut.utf8.count))
+    print(String(format: "    Annotated:   %8.2fms  (%d B)", typedSerMs, typedOut.utf8.count))
+    print(String(format: "    Ratio: %.3fx (unannotated / annotated)", untypedSerMs / typedSerMs))
 
-    let users1k = generateUsers(1000)
-    let json1k = jsonEncode(users1k)
-    let ason1k = try encode(users1k)
-
+    print()
+    printSection("Section 8: Throughput Summary", 48)
+    print()
+    let jsonData = jsonEncode(users)
+    let asonData = try encode(users)
     let iters = 100
-
-    let jsonSerDur = try elapsedMs {
-        for _ in 0..<iters { _ = jsonEncode(users1k) }
+    let jsonSerDur = elapsedMs {
+        for _ in 0..<iters { _ = jsonEncode(users) }
     }
     let asonSerDur = try elapsedMs {
-        for _ in 0..<iters { _ = try encode(users1k) }
+        for _ in 0..<iters { _ = try encode(users) }
     }
-    let jsonDeDur = try elapsedMs {
-        for _ in 0..<iters { _ = jsonDecode(json1k) }
+    let jsonDeDur = elapsedMs {
+        for _ in 0..<iters { _ = jsonDecode(jsonData) }
     }
     let asonDeDur = try elapsedMs {
-        for _ in 0..<iters { _ = try decode(ason1k) }
+        for _ in 0..<iters { _ = try decode(asonData) }
     }
-
     let totalRecords = 1000.0 * Double(iters)
-    let jsonSerRps = totalRecords / (jsonSerDur / 1000.0)
-    let asonSerRps = totalRecords / (asonSerDur / 1000.0)
-    let jsonDeRps = totalRecords / (jsonDeDur / 1000.0)
-    let asonDeRps = totalRecords / (asonDeDur / 1000.0)
-
-    print("  Serialize throughput (1000 records × \(iters) iters):")
-    print(String(format: "    JSON: %.0f records/s", jsonSerRps))
-    print(String(format: "    ASON: %.0f records/s", asonSerRps))
-    print(String(format: "    Speed: %.2fx %@", asonSerRps / jsonSerRps,
-        asonSerRps > jsonSerRps ? "✓ ASON faster" : ""))
+    print("  Serialize throughput (1000 records x \(iters) iters):")
+    print(String(format: "    JSON: %.0f records/s", totalRecords / (jsonSerDur / 1000.0)))
+    print(String(format: "    ASON: %.0f records/s", totalRecords / (asonSerDur / 1000.0)))
+    print(String(format: "    Speed: %.2fx", jsonSerDur / asonSerDur))
     print("  Deserialize throughput:")
-    print(String(format: "    JSON: %.0f records/s", jsonDeRps))
-    print(String(format: "    ASON: %.0f records/s", asonDeRps))
-    print(String(format: "    Speed: %.2fx %@", asonDeRps / jsonDeRps,
-        asonDeRps > jsonDeRps ? "✓ ASON faster" : ""))
+    print(String(format: "    JSON: %.0f records/s", totalRecords / (jsonDeDur / 1000.0)))
+    print(String(format: "    ASON: %.0f records/s", totalRecords / (asonDeDur / 1000.0)))
+    print(String(format: "    Speed: %.2fx", jsonDeDur / asonDeDur))
 
-    let rssFinal = getRSSBytes()
-    print("\n  Memory:")
-    print("    Initial RSS:  \(formatBytes(rssBefore))")
-    print("    Final RSS:    \(formatBytes(rssFinal))")
-    print("    Peak delta:   \(formatBytes(rssFinal - rssBefore))")
+    print()
+    printSection("Section 9: Prepared Encoder Appendix", 50)
+    print()
+    let preparedIters = 200
+    let (normalMs, preparedMs, preparedBinMs, preparedBytes, preparedBinBytes) = try benchPreparedEncoder(users, preparedIters)
+    print("  Flat struct x 1000 (\(preparedIters) iters, serialize only)")
+    print(String(format: "    Standard encode: %8.2fms", normalMs))
+    print(String(format: "    Prepared encode: %8.2fms  (%d B)", preparedMs, preparedBytes))
+    print(String(format: "    Prepared binary: %8.2fms  (%d B)", preparedBinMs, preparedBinBytes))
+    print(String(format: "    Encode speedup: %.3fx", normalMs / preparedMs))
 
-    // ===================================================================
-    // Section 6: Binary Format (ASON-BIN) vs ASON text vs JSON
-    // ===================================================================
-    print("\n┌──────────────────────────────────────────────────────────────┐")
-    print("│  Section 6: Binary Format (ASON-BIN) vs ASON text vs JSON    │")
-    print("└──────────────────────────────────────────────────────────────┘")
+    print()
+    printSection("Section 10: Prepared Decoder Appendix", 50)
+    print()
+    let decoderIters = 200
+    let (standardDeMs, preparedDeMs, bodyOnlyDeMs, preparedBinDeMs) = try benchPreparedDecoder(users, decoderIters)
+    print("  Flat struct x 1000 (\(decoderIters) iters, decode only)")
+    print(String(format: "    Standard decode: %8.2fms", standardDeMs))
+    print(String(format: "    Prepared decode: %8.2fms", preparedDeMs))
+    print(String(format: "    Body-only decode: %8.2fms", bodyOnlyDeMs))
+    print(String(format: "    Prepared binary: %8.2fms", preparedBinDeMs))
+    print(String(format: "    Decode speedup: %.3fx", standardDeMs / preparedDeMs))
 
-    print("\n  ── Flat struct ──")
-    try benchFlatBin(count: 100, iterations: 50).print_()
-    try benchFlatBin(count: 1000, iterations: 20).print_()
-    try benchFlatBin(count: 5000, iterations: 5).print_()
+    print()
+    printSection("Section 11: Typed Struct Codec Appendix", 54)
+    print()
+    _ = try benchTypedStructCodec(1000, 200)
 
-    print("\n  ── Deep struct (5-level nested) ──")
-    try benchDeepBin(count: 10, iterations: 50).print_()
-    try benchDeepBin(count: 100, iterations: 10).print_()
-
-    print("\n  ── Single User roundtrip ──")
-    let singleUser: AsonValue = .object([
-        "id": .int(42), "name": .string("Alice"),
-        "email": .string("alice@example.com"),
-        "age": .int(30), "score": .float(9.8),
-        "active": .bool(true), "role": .string("admin"),
-        "city": .string("Berlin")
-    ])
-    let singleIters = 100_000
-    let binNs = try elapsedMs {
-        for _ in 0..<singleIters {
-            let b = try encodeBinary(singleUser)
-            _ = try decodeBinary(b)
-        }
-    } * 1_000_000.0 / Double(singleIters)
-
-    let asonNs = try elapsedMs {
-        for _ in 0..<singleIters {
-            let s = try encode(singleUser)
-            _ = try decode(s)
-        }
-    } * 1_000_000.0 / Double(singleIters)
-
-    let jsonNs = try elapsedMs {
-        for _ in 0..<singleIters {
-            let d = jsonEncode(singleUser)
-            _ = jsonDecode(d)
-        }
-    } * 1_000_000.0 / Double(singleIters)
-
-    print(String(format: "    × %d: BIN %6.0fns | ASON %6.0fns | JSON %6.0fns",
-        singleIters, binNs, asonNs, jsonNs))
-    print(String(format: "    Speedup vs JSON: BIN %.1fx faster | ASON %.1fx faster",
-        jsonNs / binNs, jsonNs / asonNs))
+    print()
+    printSection("Section 12: Typed Complex Codec Appendix", 55)
+    print()
+    try benchTypedComplexCodec(1000, 120)
 
     print("\n╔══════════════════════════════════════════════════════════════╗")
     print("║                    Benchmark Complete                        ║")

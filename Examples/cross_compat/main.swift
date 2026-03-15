@@ -3,7 +3,7 @@ import AsonSwift
 
 // Cross-language compatibility example — matches ason-rs/examples/cross_compat.rs
 
-let input = "[{ID:int,Name:str,Age:int,Gender:bool}]:(1,Alice,30,true),(2,Bob,25,false)"
+let input = "[{ID@int,Name@str,Age@int,Gender@bool}]:(1,Alice,30,true),(2,Bob,25,false)"
 
 do {
     // Decode
