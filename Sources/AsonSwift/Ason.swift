@@ -1446,11 +1446,17 @@ private func decodeBytesBodyOnly(_ bytes: [UInt8], schema: RootSchema, bodyStart
             break
         }
         p.skipNoise()
+        if !p.isAtEnd {
+            throw AsonError.invalidData("trailing content after root value")
+        }
         return .array(rows)
     }
 
     let obj = try p.parseTuple(fields: schema.fields)
     p.skipNoise()
+    if !p.isAtEnd {
+        throw AsonError.invalidData("trailing content after root value")
+    }
     return .object(obj)
 }
 
@@ -1872,18 +1878,11 @@ private func findRootSchemaDelimiter(in bytes: [UInt8]) throws -> Int {
     var bracketDepth = 0
     var inQuote = false
     var escaped = false
-    var lineComment = false
     var blockComment = false
     var i = 0
 
     while i < bytes.count {
         let c = bytes[i]
-
-        if lineComment {
-            if c == 0x0A { lineComment = false }
-            i += 1
-            continue
-        }
 
         if blockComment {
             if c == 0x2A, i + 1 < bytes.count, bytes[i + 1] == 0x2F {
@@ -1909,11 +1908,6 @@ private func findRootSchemaDelimiter(in bytes: [UInt8]) throws -> Int {
 
         if c == 0x2F, i + 1 < bytes.count {
             let n = bytes[i + 1]
-            if n == 0x2F {
-                lineComment = true
-                i += 2
-                continue
-            }
             if n == 0x2A {
                 blockComment = true
                 i += 2
@@ -1969,11 +1963,6 @@ private struct TextParser {
             }
             if c == 0x2F, idx + 1 < storage.count { // '/'
                 let n = storage[idx + 1]
-                if n == 0x2F { // '//'
-                    idx += 2
-                    while idx < storage.count, storage[idx] != 0x0A { idx += 1 }
-                    continue
-                }
                 if n == 0x2A { // '/*'
                     idx += 2
                     while idx + 1 < storage.count {

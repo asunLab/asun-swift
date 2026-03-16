@@ -438,15 +438,6 @@ test {
     }
 }
 
-test {
-    let input = "// line comment\n{id@int,name@str}:(1,Bob)"
-    let d = try decode(input)
-    if case .object(let obj) = d {
-        assertEq(obj["id"], .int(1), "line comment: id")
-        assertEq(obj["name"], .string("Bob"), "line comment: name")
-    }
-}
-
 // ===========================================================================
 // 11. Multiline format
 // ===========================================================================
