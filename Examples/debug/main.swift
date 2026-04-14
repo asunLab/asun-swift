@@ -1,5 +1,5 @@
 import Foundation
-import AsonSwift
+import AsunSwift
 
 func debugTest(_ label: String, _ block: () throws -> Void) {
     do {
@@ -13,7 +13,7 @@ func debugTest(_ label: String, _ block: () throws -> Void) {
 print("=== Unicode Debug ===")
 
 debugTest("Japanese") {
-    let v: AsonValue = .object(["name": .string("日本語テスト")])
+    let v: AsunValue = .object(["name": .string("日本語テスト")])
     let s = try encode(v)
     print("    encoded: \(s)")
     let d = try decode(s)
@@ -21,7 +21,7 @@ debugTest("Japanese") {
 }
 
 debugTest("Emoji") {
-    let v: AsonValue = .object(["emoji": .string("Hello 🌍🚀")])
+    let v: AsunValue = .object(["emoji": .string("Hello 🌍🚀")])
     let s = try encode(v)
     print("    encoded: \(s)")
     let d = try decode(s)
@@ -29,7 +29,7 @@ debugTest("Emoji") {
 }
 
 debugTest("Mixed") {
-    let v: AsonValue = .object(["mixed": .string("中文 English العربية")])
+    let v: AsunValue = .object(["mixed": .string("中文 English العربية")])
     let s = try encode(v)
     print("    encoded: \(s)")
     let d = try decode(s)
@@ -37,7 +37,7 @@ debugTest("Mixed") {
 }
 
 debugTest("Binary unicode") {
-    let v: AsonValue = .object(["name": .string("日本語テスト"), "emoji": .string("🌍🚀✨")])
+    let v: AsunValue = .object(["name": .string("日本語テスト"), "emoji": .string("🌍🚀✨")])
     let bin = try encodeBinary(v)
     let d = try decodeBinary(bin)
     print("    match: \(d == v)")
@@ -46,7 +46,7 @@ debugTest("Binary unicode") {
 print("\n=== Text vs Binary equiv Debug ===")
 
 debugTest("Text vs Binary") {
-    let v: AsonValue = .object([
+    let v: AsunValue = .object([
         "id": .int(42),
         "name": .string("Alice"),
         "scores": .array([.float(95.5), .float(87.3), .float(92.1)]),

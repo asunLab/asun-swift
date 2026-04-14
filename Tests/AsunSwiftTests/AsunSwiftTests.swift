@@ -1,5 +1,5 @@
 import Foundation
-import AsonSwift
+import AsunSwift
 
 // ===========================================================================
 // Test Harness (no XCTest dependency)
@@ -79,14 +79,14 @@ struct TypedTeam: Equatable {
 section("1. Basic encode / decode")
 
 test {
-    let v: AsonValue = .object(["id": .int(1), "name": .string("Alice")])
+    let v: AsunValue = .object(["id": .int(1), "name": .string("Alice")])
     let s = try encode(v)
     let d = try decode(s)
     assertEq(d, v, "basic roundtrip")
 }
 
 test {
-    let v: AsonValue = .object(["a": .bool(true), "b": .float(3.14), "c": .string("hi")])
+    let v: AsunValue = .object(["a": .bool(true), "b": .float(3.14), "c": .string("hi")])
     let s = try encode(v)
     let d = try decode(s)
     assertEq(d, v, "mixed types roundtrip")
@@ -98,7 +98,7 @@ test {
 section("2. encodeTyped / decode roundtrip")
 
 test {
-    let v: AsonValue = .object(["x": .int(42), "y": .float(2.5), "z": .bool(false)])
+    let v: AsunValue = .object(["x": .int(42), "y": .float(2.5), "z": .bool(false)])
     let typed = try encodeTyped(v)
     assertTrue(typed.contains("int"), "typed should contain 'int'")
     assertTrue(typed.contains("float"), "typed should contain 'float'")
@@ -113,7 +113,7 @@ test {
 section("3. Vec (slice) encode / decode")
 
 test {
-    let v: AsonValue = .array([
+    let v: AsunValue = .array([
         .object(["id": .int(1), "name": .string("A")]),
         .object(["id": .int(2), "name": .string("B")]),
         .object(["id": .int(3), "name": .string("C")])
@@ -125,7 +125,7 @@ test {
 }
 
 test {
-    let v: AsonValue = .array([
+    let v: AsunValue = .array([
         .object(["id": .int(1), "name": .string("A")]),
         .object(["id": .int(2), "name": .string("B")])
     ])
@@ -141,7 +141,7 @@ test {
 section("4. String escaping")
 
 test {
-    let v: AsonValue = .object(["text": .string("say \"hi\"")])
+    let v: AsunValue = .object(["text": .string("say \"hi\"")])
     let s = try encode(v)
     assertTrue(s.contains("\\\""), "quoted string should escape double quotes")
     let d = try decode(s)
@@ -149,7 +149,7 @@ test {
 }
 
 test {
-    let v: AsonValue = .object(["text": .string("line1\nline2")])
+    let v: AsunValue = .object(["text": .string("line1\nline2")])
     let s = try encode(v)
     assertTrue(s.contains("\\n"), "should escape newline")
     let d = try decode(s)
@@ -157,7 +157,7 @@ test {
 }
 
 test {
-    let v: AsonValue = .object(["text": .string("tab\there")])
+    let v: AsunValue = .object(["text": .string("tab\there")])
     let s = try encode(v)
     assertTrue(s.contains("\\t"), "should escape tab")
     let d = try decode(s)
@@ -165,7 +165,7 @@ test {
 }
 
 test {
-    let v: AsonValue = .object(["text": .string("back\\slash")])
+    let v: AsunValue = .object(["text": .string("back\\slash")])
     let s = try encode(v)
     assertTrue(s.contains("\\\\"), "should escape backslash")
     let d = try decode(s)
@@ -173,7 +173,7 @@ test {
 }
 
 test {
-    let v: AsonValue = .object(["text": .string("a,b(c)d[e]f")])
+    let v: AsunValue = .object(["text": .string("a,b(c)d[e]f")])
     let s = try encode(v)
     assertTrue(s.contains("\"a,b"), "should quote string with special chars")
     let d = try decode(s)
@@ -181,7 +181,7 @@ test {
 }
 
 test {
-    let v: AsonValue = .object(["text": .string("env:prod")])
+    let v: AsunValue = .object(["text": .string("env:prod")])
     let s = try encode(v)
     assertTrue(s.contains("\"env:prod\""), "should quote string with colon")
     let d = try decode(s)
@@ -189,7 +189,7 @@ test {
 }
 
 test {
-    let v: AsonValue = .object(["text": .string("@Alice")])
+    let v: AsunValue = .object(["text": .string("@Alice")])
     let s = try encode(v)
     assertTrue(s.contains("\"@Alice\""), "should quote string with at-sign")
     let d = try decode(s)
@@ -197,7 +197,7 @@ test {
 }
 
 test {
-    let v: AsonValue = .object(["text": .string("value@demo")])
+    let v: AsunValue = .object(["text": .string("value@demo")])
     let s = try encode(v)
     assertTrue(s.contains("\"value@demo\""), "should quote string containing at-sign")
     let d = try decode(s)
@@ -206,7 +206,7 @@ test {
 
 // Strings that look like numbers must be quoted
 test {
-    let v: AsonValue = .object(["val": .string("123")])
+    let v: AsunValue = .object(["val": .string("123")])
     let s = try encode(v)
     assertTrue(s.contains("\"123\""), "number-like string should be quoted")
     let d = try decode(s)
@@ -215,7 +215,7 @@ test {
 
 // Strings that are "true"/"false" must be quoted
 test {
-    let v: AsonValue = .object(["val": .string("true")])
+    let v: AsunValue = .object(["val": .string("true")])
     let s = try encode(v)
     assertTrue(s.contains("\"true\""), "bool-like string should be quoted")
     let d = try decode(s)
@@ -224,7 +224,7 @@ test {
 
 // Empty string
 test {
-    let v: AsonValue = .object(["val": .string("")])
+    let v: AsunValue = .object(["val": .string("")])
     let s = try encode(v)
     assertTrue(s.contains("\"\""), "empty string should be quoted")
     let d = try decode(s)
@@ -233,7 +233,7 @@ test {
 
 // Strings with leading/trailing spaces
 test {
-    let v: AsonValue = .object(["val": .string(" spaced ")])
+    let v: AsunValue = .object(["val": .string(" spaced ")])
     let s = try encode(v)
     assertTrue(s.contains("\" spaced \""), "spaced string should be quoted")
     let d = try decode(s)
@@ -247,14 +247,14 @@ section("5. Numeric types")
 
 // Int64 boundaries
 test {
-    let v: AsonValue = .object(["n": .int(Int64.max)])
+    let v: AsunValue = .object(["n": .int(Int64.max)])
     let s = try encodeTyped(v)
     let d = try decode(s)
     assertEq(d, v, "Int64.max roundtrip")
 }
 
 test {
-    let v: AsonValue = .object(["n": .int(Int64.min)])
+    let v: AsunValue = .object(["n": .int(Int64.min)])
     let s = try encodeTyped(v)
     let d = try decode(s)
     assertEq(d, v, "Int64.min roundtrip")
@@ -262,7 +262,7 @@ test {
 
 // Large positive int
 test {
-    let v: AsonValue = .object(["n": .int(Int64.max)])
+    let v: AsunValue = .object(["n": .int(Int64.max)])
     let s = try encodeTyped(v)
     let d = try decode(s)
     assertEq(d, v, "large positive int roundtrip")
@@ -270,7 +270,7 @@ test {
 
 // Zero
 test {
-    let v: AsonValue = .object(["n": .int(0)])
+    let v: AsunValue = .object(["n": .int(0)])
     let s = try encodeTyped(v)
     let d = try decode(s)
     assertEq(d, v, "zero int roundtrip")
@@ -278,7 +278,7 @@ test {
 
 // Negative numbers
 test {
-    let v: AsonValue = .object(["a": .int(-1), "b": .int(-999999999)])
+    let v: AsunValue = .object(["a": .int(-1), "b": .int(-999999999)])
     let s = try encodeTyped(v)
     let d = try decode(s)
     assertEq(d, v, "negative int roundtrip")
@@ -286,7 +286,7 @@ test {
 
 // Floats
 test {
-    let v: AsonValue = .object(["pi": .float(3.14159265358979)])
+    let v: AsunValue = .object(["pi": .float(3.14159265358979)])
     let s = try encodeTyped(v)
     let d = try decode(s)
     if case .object(let obj) = d, case .float(let f) = obj["pi"] {
@@ -297,7 +297,7 @@ test {
 }
 
 test {
-    let v: AsonValue = .object(["n": .float(-0.001)])
+    let v: AsunValue = .object(["n": .float(-0.001)])
     let s = try encodeTyped(v)
     let d = try decode(s)
     if case .object(let obj) = d, case .float(let f) = obj["n"] {
@@ -306,7 +306,7 @@ test {
 }
 
 test {
-    let v: AsonValue = .object(["n": .float(100.0)])
+    let v: AsunValue = .object(["n": .float(100.0)])
     let s = try encodeTyped(v)
     let d = try decode(s)
     assertEq(d, v, "whole float roundtrip")
@@ -318,7 +318,7 @@ test {
 section("6. Boolean")
 
 test {
-    let v: AsonValue = .object(["t": .bool(true), "f": .bool(false)])
+    let v: AsunValue = .object(["t": .bool(true), "f": .bool(false)])
     let s = try encodeTyped(v)
     let d = try decode(s)
     assertEq(d, v, "bool roundtrip")
@@ -330,7 +330,7 @@ test {
 section("7. Nested objects")
 
 test {
-    let v: AsonValue = .object([
+    let v: AsunValue = .object([
         "a": .int(1),
         "inner": .object(["b": .int(2), "c": .string("deep")])
     ])
@@ -340,7 +340,7 @@ test {
 }
 
 test {
-    let v: AsonValue = .object([
+    let v: AsunValue = .object([
         "level1": .object([
             "level2": .object([
                 "level3": .object([
@@ -360,7 +360,7 @@ test {
 section("8. Array fields")
 
 test {
-    let v: AsonValue = .object([
+    let v: AsunValue = .object([
         "name": .string("test"),
         "tags": .array([.string("a"), .string("b"), .string("c")])
     ])
@@ -370,7 +370,7 @@ test {
 }
 
 test {
-    let v: AsonValue = .object([
+    let v: AsunValue = .object([
         "nums": .array([.int(1), .int(2), .int(3)])
     ])
     let s = try encodeTyped(v)
@@ -465,7 +465,7 @@ test {
 section("12. Pretty format roundtrip")
 
 test {
-    let v: AsonValue = .object(["id": .int(1), "name": .string("test")])
+    let v: AsunValue = .object(["id": .int(1), "name": .string("test")])
     let pretty = try encodePretty(v)
     assertTrue(pretty.contains("\n"), "pretty should have newlines")
     let d = try decode(pretty)
@@ -473,7 +473,7 @@ test {
 }
 
 test {
-    let v: AsonValue = .array([
+    let v: AsunValue = .array([
         .object(["id": .int(1), "name": .string("A")]),
         .object(["id": .int(2), "name": .string("B")])
     ])
@@ -484,7 +484,7 @@ test {
 }
 
 test {
-    let v: AsonValue = .object([
+    let v: AsunValue = .object([
         "level1": .object(["level2": .object(["val": .int(42)])])
     ])
     let pretty = try encodePretty(v)
@@ -498,7 +498,7 @@ test {
 section("13. Pretty typed format roundtrip")
 
 test {
-    let v: AsonValue = .object(["x": .int(1), "y": .float(2.5)])
+    let v: AsunValue = .object(["x": .int(1), "y": .float(2.5)])
     let pretty = try encodePrettyTyped(v)
     assertTrue(pretty.contains("int"), "pretty typed should contain type annotations")
     let d = try decode(pretty)
@@ -506,7 +506,7 @@ test {
 }
 
 test {
-    let v: AsonValue = .object([
+    let v: AsunValue = .object([
         "id uuid": .string("@Alice"),
         "65": .bool(true),
         "{}[]@\\\"": .string("value@demo")
@@ -524,14 +524,14 @@ test {
 section("14. Binary roundtrip")
 
 test {
-    let v: AsonValue = .object(["id": .int(42), "name": .string("test")])
+    let v: AsunValue = .object(["id": .int(42), "name": .string("test")])
     let bin = try encodeBinary(v)
     let d = try decodeBinary(bin)
     assertEq(d, v, "binary basic roundtrip")
 }
 
 test {
-    let v: AsonValue = .array([
+    let v: AsunValue = .array([
         .object(["id": .int(1), "val": .float(1.5)]),
         .object(["id": .int(2), "val": .float(2.5)]),
         .object(["id": .int(3), "val": .float(3.5)])
@@ -542,7 +542,7 @@ test {
 }
 
 test {
-    let v: AsonValue = .object([
+    let v: AsunValue = .object([
         "a": .int(Int64.max),
         "b": .int(Int64.max),
         "c": .float(3.14159265358979),
@@ -555,7 +555,7 @@ test {
 }
 
 test {
-    let v: AsonValue = .object([
+    let v: AsunValue = .object([
         "id uuid": .string("@Alice"),
         "65": .bool(true),
         "{}[]@\\\"": .string("value@demo")
@@ -566,7 +566,7 @@ test {
 }
 
 test {
-    let v: AsonValue = .object([
+    let v: AsunValue = .object([
         "nested": .object(["x": .int(1), "y": .int(2)]),
         "tags": .array([.string("a"), .string("b")])
     ])
@@ -590,8 +590,8 @@ test {
 // ===========================================================================
 section("15. Binary vs JSON size comparison")
 
-func jsonSize(_ v: AsonValue) -> Int {
-    func toJSON(_ v: AsonValue) -> Any {
+func jsonSize(_ v: AsunValue) -> Int {
+    func toJSON(_ v: AsunValue) -> Any {
         switch v {
         case .int(let i): return NSNumber(value: i)
                 case .float(let d): return NSNumber(value: d)
@@ -611,7 +611,7 @@ func jsonSize(_ v: AsonValue) -> Int {
 }
 
 test {
-    var rows: [AsonValue] = []
+    var rows: [AsunValue] = []
     for i in 0..<100 {
         rows.append(.object([
             "id": .int(Int64(i)),
@@ -620,13 +620,13 @@ test {
             "active": .bool(i % 2 == 0)
         ]))
     }
-    let v: AsonValue = .array(rows)
+    let v: AsunValue = .array(rows)
     let bin = try encodeBinary(v)
-    let asonText = try encode(v)
+    let asunText = try encode(v)
     let jSize = jsonSize(v)
-    print("  100 records: ASON text \(asonText.utf8.count) B | ASON bin \(bin.count) B | JSON \(jSize) B")
+    print("  100 records: ASUN text \(asunText.utf8.count) B | ASUN bin \(bin.count) B | JSON \(jSize) B")
     assertTrue(bin.count < jSize, "binary should be smaller than JSON for 100 records")
-    assertTrue(asonText.utf8.count < jSize, "ASON text should be smaller than JSON for 100 records")
+    assertTrue(asunText.utf8.count < jSize, "ASUN text should be smaller than JSON for 100 records")
 }
 
 // ===========================================================================
@@ -635,7 +635,7 @@ test {
 section("16. Format validation (bad input)")
 
 assertThrows({ _ = try decode("") }, "empty input")
-assertThrows({ _ = try decode("not-ason") }, "garbage input")
+assertThrows({ _ = try decode("not-asun") }, "garbage input")
 assertThrows({ _ = try decode("{id@int}:") }, "schema with no data")
 assertThrows({ _ = try decode("{id@int}:(abc)") }, "int field with non-int data")
 assertThrows({ _ = try decode("{id@badtype}:(1)") }, "unknown type")
@@ -667,7 +667,7 @@ test {
 section("18. Typed vs untyped schema")
 
 test {
-    let v: AsonValue = .object(["id": .int(1), "name": .string("test")])
+    let v: AsunValue = .object(["id": .int(1), "name": .string("test")])
     let typed = try encodeTyped(v)
     let untyped = try encode(v)
     assertTrue(typed.count >= untyped.count, "typed ≥ untyped length")
@@ -685,7 +685,7 @@ section("19. Large string values")
 
 test {
     let longStr = String(repeating: "abcdefghij", count: 1000)
-    let v: AsonValue = .object(["data": .string(longStr)])
+    let v: AsunValue = .object(["data": .string(longStr)])
     let s = try encode(v)
     let d = try decode(s)
     if case .object(let obj) = d, case .string(let str) = obj["data"] {
@@ -697,7 +697,7 @@ test {
 // Large string with special characters
 test {
     let longStr = String(repeating: "hello, (world) [test]\n", count: 500)
-    let v: AsonValue = .object(["data": .string(longStr)])
+    let v: AsunValue = .object(["data": .string(longStr)])
     let s = try encode(v)
     let d = try decode(s)
     assertEq(d, v, "large string with special chars roundtrip")
@@ -709,7 +709,7 @@ test {
 section("20. Binary large payload roundtrip")
 
 test {
-    var rows: [AsonValue] = []
+    var rows: [AsunValue] = []
     for i in 0..<1000 {
         rows.append(.object([
             "id": .int(Int64(i)),
@@ -719,7 +719,7 @@ test {
             "score": .float(Double(i) * 0.1)
         ]))
     }
-    let v: AsonValue = .array(rows)
+    let v: AsunValue = .array(rows)
     let bin = try encodeBinary(v)
     let d = try decodeBinary(bin)
     assertEq(d, v, "binary 1000-record roundtrip")
@@ -731,7 +731,7 @@ test {
 section("21. Deeply nested binary roundtrip")
 
 test {
-    let v: AsonValue = .object([
+    let v: AsunValue = .object([
         "a": .object([
             "b": .object([
                 "c": .array([
@@ -752,7 +752,7 @@ test {
 section("22. All 7 API functions")
 
 test {
-    let v: AsonValue = .object(["id": .int(1), "name": .string("test")])
+    let v: AsunValue = .object(["id": .int(1), "name": .string("test")])
     let s1 = try encode(v)
     let s2 = try encodeTyped(v)
     let s3 = try encodePretty(v)
@@ -772,7 +772,7 @@ test {
 }
 
 test {
-    let v: AsonValue = .object([
+    let v: AsunValue = .object([
         "id uuid": .string("@Alice"),
         "65": .bool(true),
         "{}[]@\\\"": .string("value@demo")
@@ -803,7 +803,7 @@ test {
 section("23. Vec with many fields")
 
 test {
-    var rows: [AsonValue] = []
+    var rows: [AsunValue] = []
     for i in 0..<50 {
         rows.append(.object([
             "f1": .int(Int64(i)),
@@ -818,7 +818,7 @@ test {
             "f10": .object(["sub": .int(Int64(i * 10))])
         ]))
     }
-    let v: AsonValue = .array(rows)
+    let v: AsunValue = .array(rows)
     // Use encodeTyped to preserve int/float distinction
     let s = try encodeTyped(v)
     let d = try decode(s)
@@ -835,21 +835,21 @@ test {
 section("24. Unicode strings")
 
 test {
-    let v: AsonValue = .object(["name": .string("日本語テスト")])
+    let v: AsunValue = .object(["name": .string("日本語テスト")])
     let s = try encode(v)
     let d = try decode(s)
     assertEq(d, v, "Japanese text roundtrip")
 }
 
 test {
-    let v: AsonValue = .object(["emoji": .string("Hello 🌍🚀")])
+    let v: AsunValue = .object(["emoji": .string("Hello 🌍🚀")])
     let s = try encode(v)
     let d = try decode(s)
     assertEq(d, v, "Emoji roundtrip")
 }
 
 test {
-    let v: AsonValue = .object(["mixed": .string("中文 English العربية")])
+    let v: AsunValue = .object(["mixed": .string("中文 English العربية")])
     let s = try encode(v)
     let d = try decode(s)
     assertEq(d, v, "Mixed scripts roundtrip")
@@ -857,27 +857,27 @@ test {
 
 // binary unicode
 test {
-    let v: AsonValue = .object(["name": .string("日本語テスト"), "emoji": .string("🌍🚀✨")])
+    let v: AsunValue = .object(["name": .string("日本語テスト"), "emoji": .string("🌍🚀✨")])
     let bin = try encodeBinary(v)
     let d = try decodeBinary(bin)
     assertEq(d, v, "binary unicode roundtrip")
 }
 
 // ===========================================================================
-// 25. AsonValue equality
+// 25. AsunValue equality
 // ===========================================================================
-section("25. AsonValue equality")
+section("25. AsunValue equality")
 
 test {
-    assertEq(AsonValue.int(42), AsonValue.int(42), "int equality")
-    assertTrue(AsonValue.int(1) != AsonValue.int(2), "int inequality")
-    assertEq(AsonValue.string("hi"), AsonValue.string("hi"), "string equality")
-    assertTrue(AsonValue.string("a") != AsonValue.string("b"), "string inequality")
-    assertEq(AsonValue.null, AsonValue.null, "null equality")
-    assertEq(AsonValue.bool(true), AsonValue.bool(true), "bool equality")
-    assertTrue(AsonValue.bool(true) != AsonValue.bool(false), "bool inequality")
-    assertEq(AsonValue.float(1.5), AsonValue.float(1.5), "float equality")
-    assertTrue(AsonValue.int(1) != AsonValue.string("1"), "cross-type inequality")
+    assertEq(AsunValue.int(42), AsunValue.int(42), "int equality")
+    assertTrue(AsunValue.int(1) != AsunValue.int(2), "int inequality")
+    assertEq(AsunValue.string("hi"), AsunValue.string("hi"), "string equality")
+    assertTrue(AsunValue.string("a") != AsunValue.string("b"), "string inequality")
+    assertEq(AsunValue.null, AsunValue.null, "null equality")
+    assertEq(AsunValue.bool(true), AsunValue.bool(true), "bool equality")
+    assertTrue(AsunValue.bool(true) != AsunValue.bool(false), "bool inequality")
+    assertEq(AsunValue.float(1.5), AsunValue.float(1.5), "float equality")
+    assertTrue(AsunValue.int(1) != AsunValue.string("1"), "cross-type inequality")
 }
 
 // ===========================================================================
@@ -886,7 +886,7 @@ test {
 section("26. Text <-> Binary equivalence")
 
 test {
-    let v: AsonValue = .object([
+    let v: AsunValue = .object([
         "id": .int(42),
         "name": .string("Alice"),
         "scores": .array([.float(95.5), .float(87.3), .float(92.1)]),
@@ -907,7 +907,7 @@ test {
 section("27. Binary optional marker safety")
 
 test {
-    let v: AsonValue = .array([
+    let v: AsunValue = .array([
         .object(["count": .null]),
         .object(["count": .int(4_294_967_295)])
     ])
@@ -935,13 +935,13 @@ test {
 section("29. Slice schema inference")
 
 test {
-    let v: AsonValue = .array([
+    let v: AsunValue = .array([
         .object(["id": .int(1), "name": .string("Alice")]),
         .object(["id": .int(2), "email": .string("alice@example.com")])
     ])
     let text = try encodeTyped(v)
     let d = try decode(text)
-    let expected: AsonValue = .array([
+    let expected: AsunValue = .array([
         .object(["email": .null, "id": .int(1), "name": .string("Alice")]),
         .object(["email": .string("alice@example.com"), "id": .int(2), "name": .null])
     ])
@@ -949,7 +949,7 @@ test {
 }
 
 test {
-    let v: AsonValue = .array([
+    let v: AsunValue = .array([
         .object(["id": .int(1)]),
         .object(["id": .object(["nested": .int(2)])])
     ])
@@ -964,21 +964,21 @@ test {
 section("30. Go parity cases")
 
 test {
-    let v: AsonValue = .object(["id": .int(1), "name": .string("Alice"), "active": .bool(true)])
+    let v: AsunValue = .object(["id": .int(1), "name": .string("Alice"), "active": .bool(true)])
     assertEq(try encode(v), "{active,id,name}:(true,1,Alice)", "go parity: serialize struct")
 }
 
 test {
     let untyped = "{id,name,active}:(42,Bob,false)"
     let typed = "{id@int,name@str,active@bool}:(42,Bob,false)"
-    let expected: AsonValue = .object(["id": .int(42), "name": .string("Bob"), "active": .bool(false)])
+    let expected: AsunValue = .object(["id": .int(42), "name": .string("Bob"), "active": .bool(false)])
     assertEq(try decode(untyped), expected, "go parity: decode simple untyped")
     assertEq(try decode(typed), expected, "go parity: decode simple typed")
 }
 
 test {
     let input = "[{id,name,active}]:(1,Alice,true),(2,Bob,false),"
-    let expected: AsonValue = .array([
+    let expected: AsunValue = .array([
         .object(["id": .int(1), "name": .string("Alice"), "active": .bool(true)]),
         .object(["id": .int(2), "name": .string("Bob"), "active": .bool(false)])
     ])
@@ -987,7 +987,7 @@ test {
 
 test {
     let input = "{name,attrs@[{key,value}]}:(Alice,[(age,30),(score,95)])"
-    let expected: AsonValue = .object([
+    let expected: AsunValue = .object([
         "name": .string("Alice"),
         "attrs": .array([
             .object(["key": .string("age"), "value": .int(30)]),
@@ -999,7 +999,7 @@ test {
 
 test {
     let input = "{groups@[{key,value@[{name,age}]}]}:([(teamA,[(Alice,30),(Bob,28)]),(teamB,[(Carol,41)])])"
-    let expected: AsonValue = .object([
+    let expected: AsunValue = .object([
         "groups": .array([
             .object([
                 "key": .string("teamA"),
@@ -1026,7 +1026,7 @@ test {
     let partial = "{id@int,name,score@float,active}:(1,Alice,95.5,true)"
     let full = "{id@int,name@str,score@float,active@bool}:(1,Alice,95.5,true)"
     let none = "{id,name,score,active}:(1,Alice,95.5,true)"
-    let expected: AsonValue = .object([
+    let expected: AsunValue = .object([
         "id": .int(1),
         "name": .string("Alice"),
         "score": .float(95.5),
@@ -1038,13 +1038,13 @@ test {
 }
 
 test {
-    let simple = AsonValue.object(["id": .int(1), "name": .string("Alice"), "active": .bool(true)])
+    let simple = AsunValue.object(["id": .int(1), "name": .string("Alice"), "active": .bool(true)])
     assertEq(try encodeTyped(simple), "{active@bool,id@int,name@str}:(true,1,Alice)", "go parity: encodeTyped simple")
 
-    let floats = AsonValue.object(["id": .int(1), "value": .float(95.5), "label": .string("good")])
+    let floats = AsunValue.object(["id": .int(1), "value": .float(95.5), "label": .string("good")])
     assertEq(try encodeTyped(floats), "{id@int,label@str,value@float}:(1,good,95.5)", "go parity: encodeTyped floats")
 
-    let all = AsonValue.object([
+    let all = AsunValue.object([
         "b": .bool(true),
         "i": .int(-42),
         "u": .int(100),
@@ -1055,14 +1055,14 @@ test {
 }
 
 test {
-    let nested = AsonValue.object([
+    let nested = AsunValue.object([
         "name": .string("Alice"),
         "dept": .object(["title": .string("Engineering")]),
         "active": .bool(true)
     ])
     assertEq(try encodeTyped(nested), "{active@bool,dept@{title@str},name@str}:(true,(Engineering),Alice)", "go parity: encodeTyped nested")
 
-    let rows = AsonValue.array([
+    let rows = AsunValue.array([
         .object(["id": .int(1), "name": .string("Alice"), "score": .float(95.5)]),
         .object(["id": .int(2), "name": .string("Bob"), "score": .float(87.0)])
     ])
@@ -1076,16 +1076,16 @@ test {
 section("31. Prepared encoder")
 
 test {
-    let sample = AsonValue.object(["id": .int(1), "name": .string("Alice"), "active": .bool(true)])
-    let prepared = try PreparedAsonEncoder(sample: sample)
+    let sample = AsunValue.object(["id": .int(1), "name": .string("Alice"), "active": .bool(true)])
+    let prepared = try PreparedAsunEncoder(sample: sample)
     let encoded = try prepared.encode(sample)
     let decoded = try decode(encoded)
     assertEq(decoded, sample, "prepared encoder roundtrip")
 }
 
 test {
-    let sample = AsonValue.object(["id": .int(1), "name": .string("Alice"), "active": .bool(true)])
-    let prepared = try PreparedAsonEncoder(sample: sample, typed: true)
+    let sample = AsunValue.object(["id": .int(1), "name": .string("Alice"), "active": .bool(true)])
+    let prepared = try PreparedAsunEncoder(sample: sample, typed: true)
     let pretty = try prepared.encodePretty(sample)
     let decoded = try decode(pretty)
     assertEq(decoded, sample, "prepared encoder pretty roundtrip")
@@ -1093,20 +1093,20 @@ test {
 }
 
 test {
-    let sample = AsonValue.array([
+    let sample = AsunValue.array([
         .object(["id": .int(1), "name": .string("Alice")]),
         .object(["id": .int(2), "name": .string("Bob")])
     ])
-    let prepared = try PreparedAsonEncoder(sample: sample, typed: true)
+    let prepared = try PreparedAsunEncoder(sample: sample, typed: true)
     let bin = try prepared.encodeBinary(sample)
     let decoded = try decodeBinary(bin)
     assertEq(decoded, sample, "prepared encoder binary roundtrip")
 }
 
 test {
-    let sample = AsonValue.object(["id": .int(1), "name": .string("Alice")])
-    let mismatch = AsonValue.object(["id": .object(["nested": .int(2)]), "name": .string("Alice")])
-    let prepared = try PreparedAsonEncoder(sample: sample, typed: true)
+    let sample = AsunValue.object(["id": .int(1), "name": .string("Alice")])
+    let mismatch = AsunValue.object(["id": .object(["nested": .int(2)]), "name": .string("Alice")])
+    let prepared = try PreparedAsunEncoder(sample: sample, typed: true)
     assertThrows({ _ = try prepared.encode(mismatch) }, "prepared encoder should reject mismatched shape")
 }
 
@@ -1116,28 +1116,28 @@ test {
 section("32. Prepared decoder")
 
 test {
-    let sample = AsonValue.object(["id": .int(1), "name": .string("Alice"), "active": .bool(true)])
+    let sample = AsunValue.object(["id": .int(1), "name": .string("Alice"), "active": .bool(true)])
     let encoded = try encodeTyped(sample)
-    let decoder = try PreparedAsonDecoder(sample: sample, typed: true)
+    let decoder = try PreparedAsunDecoder(sample: sample, typed: true)
     let decoded = try decoder.decode(encoded)
     assertEq(decoded, sample, "prepared decoder roundtrip")
 }
 
 test {
-    let sample = AsonValue.object(["id": .int(1), "name": .string("Alice")])
+    let sample = AsunValue.object(["id": .int(1), "name": .string("Alice")])
     let body = "(1,Alice)"
-    let decoder = try PreparedAsonDecoder(schemaText: "{id@int,name@str}")
+    let decoder = try PreparedAsunDecoder(schemaText: "{id@int,name@str}")
     let decoded = try decoder.decodeBody(body)
     assertEq(decoded, sample, "prepared decoder body-only roundtrip")
 }
 
 test {
-    let sample = AsonValue.array([
+    let sample = AsunValue.array([
         .object(["id": .int(1), "name": .string("Alice")]),
         .object(["id": .int(2), "name": .string("Bob")])
     ])
-    let prepared = try PreparedAsonEncoder(sample: sample, typed: true)
-    let decoder = try PreparedAsonDecoder(sample: sample, typed: true)
+    let prepared = try PreparedAsunEncoder(sample: sample, typed: true)
+    let decoder = try PreparedAsunDecoder(sample: sample, typed: true)
     let bin = try prepared.encodeBinary(sample)
     let decoded = try decoder.decodeBinary(bin)
     assertEq(decoded, sample, "prepared decoder binary roundtrip")
@@ -1149,7 +1149,7 @@ test {
 section("33. Typed struct codec")
 
 test {
-    let codec = AsonStructCodec<TypedUser>(fields: [
+    let codec = AsunStructCodec<TypedUser>(fields: [
         .int("id", \.id),
         .string("name", \.name),
         .bool("active", \.active),
@@ -1164,7 +1164,7 @@ test {
 }
 
 test {
-    let codec = AsonStructArrayCodec<TypedUser>(fields: [
+    let codec = AsunStructArrayCodec<TypedUser>(fields: [
         .int("id", \.id),
         .string("name", \.name),
         .bool("active", \.active),
@@ -1182,7 +1182,7 @@ test {
 }
 
 test {
-    let codec = AsonStructArrayCodec<TypedUser>(fields: [
+    let codec = AsunStructArrayCodec<TypedUser>(fields: [
         .int("id", \.id),
         .string("name", \.name),
         .bool("active", \.active),
@@ -1200,11 +1200,11 @@ test {
 }
 
 test {
-    let profileCodec = AsonStructCodec<TypedProfile>(fields: [
+    let profileCodec = AsunStructCodec<TypedProfile>(fields: [
         .int("level", \.level),
         .string("title", \.title)
     ], make: TypedProfile.init)
-    let codec = AsonStructCodec<TypedTeam>(fields: [
+    let codec = AsunStructCodec<TypedTeam>(fields: [
         .int("id", \.id),
         .stringArray("tags", \.tags),
         .floatArray("scores", \.scores),
@@ -1227,11 +1227,11 @@ test {
 }
 
 test {
-    let profileCodec = AsonStructCodec<TypedProfile>(fields: [
+    let profileCodec = AsunStructCodec<TypedProfile>(fields: [
         .int("level", \.level),
         .string("title", \.title)
     ], make: TypedProfile.init)
-    let codec = AsonStructCodec<TypedTeam>(fields: [
+    let codec = AsunStructCodec<TypedTeam>(fields: [
         .int("id", \.id),
         .stringArray("tags", \.tags),
         .floatArray("scores", \.scores),

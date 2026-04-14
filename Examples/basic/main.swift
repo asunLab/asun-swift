@@ -1,36 +1,36 @@
 import Foundation
-import AsonSwift
+import AsunSwift
 
-func jsonEncode(_ value: AsonValue) -> Data {
-    let obj = asonToJSON(value)
+func jsonEncode(_ value: AsunValue) -> Data {
+    let obj = asunToJSON(value)
     return try! JSONSerialization.data(withJSONObject: obj, options: [])
 }
 
-func asonToJSON(_ v: AsonValue) -> Any {
+func asunToJSON(_ v: AsunValue) -> Any {
     switch v {
     case .int(let i): return NSNumber(value: i)
         case .float(let d): return NSNumber(value: d)
     case .bool(let b): return NSNumber(value: b)
     case .string(let s): return s
-    case .array(let arr): return arr.map { asonToJSON($0) }
+    case .array(let arr): return arr.map { asunToJSON($0) }
     case .object(let obj):
         var dict: [String: Any] = [:]
-        for (k, v) in obj { dict[k] = asonToJSON(v) }
+        for (k, v) in obj { dict[k] = asunToJSON(v) }
         return dict
     case .null: return NSNull()
     }
 }
 
-print("=== ASON Basic Examples ===")
+print("=== ASUN Basic Examples ===")
 print()
 
-let user: AsonValue = .object([
+let user: AsunValue = .object([
     "id": .int(1),
     "name": .string("Alice"),
     "active": .bool(true)
 ])
 
-let users: AsonValue = .array([
+let users: AsunValue = .array([
     .object(["id": .int(1), "name": .string("Alice"), "active": .bool(true)]),
     .object(["id": .int(2), "name": .string("Bob"), "active": .bool(false)]),
     .object(["id": .int(3), "name": .string("Carol Smith"), "active": .bool(true)])
@@ -78,22 +78,22 @@ if case .array(let arr) = multi {
     }
 }
 
-print("\n8. Roundtrip (ASON-text vs ASON-bin vs JSON):")
-let original: AsonValue = .object([
+print("\n8. Roundtrip (ASUN-text vs ASUN-bin vs JSON):")
+let original: AsunValue = .object([
     "id": .int(42),
     "name": .string("Test User"),
     "active": .bool(true)
 ])
-let asonText = try encode(original)
-let fromAson = try decode(asonText)
-assert(fromAson == original, "ASON text roundtrip mismatch")
-let asonBin = try encodeBinary(original)
-let fromBin = try decodeBinary(asonBin)
-assert(fromBin == original, "ASON binary roundtrip mismatch")
+let asunText = try encode(original)
+let fromAsun = try decode(asunText)
+assert(fromAsun == original, "ASUN text roundtrip mismatch")
+let asunBin = try encodeBinary(original)
+let fromBin = try decodeBinary(asunBin)
+assert(fromBin == original, "ASUN binary roundtrip mismatch")
 let jsonData = jsonEncode(original)
 print("  original:     \(original)")
-print("  ASON text:    \(asonText) (\(asonText.utf8.count) B)")
-print("  ASON binary:  \(asonBin.count) B")
+print("  ASUN text:    \(asunText) (\(asunText.utf8.count) B)")
+print("  ASUN binary:  \(asunBin.count) B")
 print("  JSON:         \(String(data: jsonData, encoding: .utf8)!) (\(jsonData.count) B)")
 print("  ✓ all 3 formats roundtrip OK")
 

@@ -1,6 +1,6 @@
-# ason-swift
+# asun-swift
 
-Swift implementation for [ASON](https://github.com/ason-lab/ason), focused on low-allocation encoding/decoding, schema-first data layout, and high-throughput binary pipelines.
+Swift implementation for [ASUN](https://github.com/asun-lab/asun), focused on low-allocation encoding/decoding, schema-first data layout, and high-throughput binary pipelines.
 
 [中文文档](README_CN.md)
 
@@ -12,7 +12,7 @@ Swift implementation for [ASON](https://github.com/ason-lab/ason), focused on lo
 - Schema-first tuple encoding to reduce repeated field-name overhead
 - Typed and untyped text modes + pretty format
 - Binary codec with scalar-hint schema header for direct roundtrip
-- Follows the latest ASON spec: `@` is the field binding marker, scalar hints are optional, and complex fields keep the required `@{}` / `@[]` structural bindings
+- Follows the latest ASUN spec: `@` is the field binding marker, scalar hints are optional, and complex fields keep the required `@{}` / `@[]` structural bindings
 - No standalone `map` type; dictionary-like data should be modeled as arrays of key-value tuples such as `attrs@[{key@str,value@int}]`
 
 ## API
@@ -28,9 +28,9 @@ Swift implementation for [ASON](https://github.com/ason-lab/ason), focused on lo
 ## Quick Start
 
 ```swift
-import AsonSwift
+import AsunSwift
 
-let user: AsonValue = .object([
+let user: AsunValue = .object([
   "id": .int(1),
   "name": .string("Alice"),
   "active": .bool(true)
@@ -76,7 +76,7 @@ swift run run_tests
 
 - Covers text encode/decode and binary roundtrip.
 - Includes escaping, multiline input, comments, and array/object schemas.
-- Mirrors the same functional coverage style used by other ASON language ports.
+- Mirrors the same functional coverage style used by other ASUN language ports.
 - Suitable as baseline for cross-language compatibility extension tests.
 
 ## License

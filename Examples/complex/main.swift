@@ -1,28 +1,28 @@
 import Foundation
-import AsonSwift
+import AsunSwift
 
-func jsonEncode(_ value: AsonValue) -> Data {
-    let obj = asonToJSON(value)
+func jsonEncode(_ value: AsunValue) -> Data {
+    let obj = asunToJSON(value)
     return try! JSONSerialization.data(withJSONObject: obj, options: [])
 }
 
-func asonToJSON(_ v: AsonValue) -> Any {
+func asunToJSON(_ v: AsunValue) -> Any {
     switch v {
     case .int(let i): return NSNumber(value: i)
         case .float(let d): return NSNumber(value: d)
     case .bool(let b): return NSNumber(value: b)
     case .string(let s): return s
-    case .array(let arr): return arr.map { asonToJSON($0) }
+    case .array(let arr): return arr.map { asunToJSON($0) }
     case .object(let obj):
         var dict: [String: Any] = [:]
-        for (k, v) in obj { dict[k] = asonToJSON(v) }
+        for (k, v) in obj { dict[k] = asunToJSON(v) }
         return dict
     case .null: return NSNull()
     }
 }
 
-func obj(_ pairs: [String: AsonValue]) -> AsonValue { .object(pairs) }
-func arr(_ values: [AsonValue]) -> AsonValue { .array(values) }
+func obj(_ pairs: [String: AsunValue]) -> AsunValue { .object(pairs) }
+func arr(_ values: [AsunValue]) -> AsunValue { .array(values) }
 
 func require(_ condition: @autoclosure () -> Bool, _ message: String) {
     if !condition() {
@@ -30,7 +30,7 @@ func require(_ condition: @autoclosure () -> Bool, _ message: String) {
     }
 }
 
-func makeCountry(_ name: String, _ code: String, _ population: Int64, _ gdp: Double, _ regions: [AsonValue]) -> AsonValue {
+func makeCountry(_ name: String, _ code: String, _ population: Int64, _ gdp: Double, _ regions: [AsunValue]) -> AsunValue {
     obj([
         "name": .string(name),
         "code": .string(code),
@@ -40,7 +40,7 @@ func makeCountry(_ name: String, _ code: String, _ population: Int64, _ gdp: Dou
     ])
 }
 
-print("=== ASON Complex Examples ===")
+print("=== ASUN Complex Examples ===")
 print()
 
 print("1. Nested struct:")
@@ -209,13 +209,13 @@ let preview = String(countryText.prefix(200))
 print("   first 200 chars: \(preview)...")
 let countryBack = try decode(countryText)
 require(countryBack == country, "5-level text roundtrip mismatch")
-print("   ✓ 5-level ASON-text roundtrip OK")
+print("   ✓ 5-level ASUN-text roundtrip OK")
 let countryBin = try encodeBinary(country)
 let countryBinBack = try decodeBinary(countryBin)
 require(countryBinBack == country, "5-level binary roundtrip mismatch")
-print("   ✓ 5-level ASON-bin roundtrip OK")
+print("   ✓ 5-level ASUN-bin roundtrip OK")
 let countryJSON = jsonEncode(country)
-print("   ASON text: \(countryText.utf8.count) B | ASON bin: \(countryBin.count) B | JSON: \(countryJSON.count) B")
+print("   ASUN text: \(countryText.utf8.count) B | ASUN bin: \(countryBin.count) B | JSON: \(countryJSON.count) B")
 print(String(format: "   BIN vs JSON: %.0f%% smaller | TEXT vs JSON: %.0f%% smaller",
              (1.0 - Double(countryBin.count) / Double(countryJSON.count)) * 100.0,
              (1.0 - Double(countryText.utf8.count) / Double(countryJSON.count)) * 100.0))
@@ -268,13 +268,13 @@ let universeText = try encode(universe)
 print("   serialized (\(universeText.utf8.count) bytes)")
 let universeBack = try decode(universeText)
 require(universeBack == universe, "7-level text roundtrip mismatch")
-print("   ✓ 7-level ASON-text roundtrip OK")
+print("   ✓ 7-level ASUN-text roundtrip OK")
 let universeBin = try encodeBinary(universe)
 let universeBinBack = try decodeBinary(universeBin)
 require(universeBinBack == universe, "7-level binary roundtrip mismatch")
-print("   ✓ 7-level ASON-bin roundtrip OK")
+print("   ✓ 7-level ASUN-bin roundtrip OK")
 let universeJSON = jsonEncode(universe)
-print("   ASON text: \(universeText.utf8.count) B | ASON bin: \(universeBin.count) B | JSON: \(universeJSON.count) B")
+print("   ASUN text: \(universeText.utf8.count) B | ASUN bin: \(universeBin.count) B | JSON: \(universeJSON.count) B")
 print(String(format: "   BIN vs JSON: %.0f%% smaller | TEXT vs JSON: %.0f%% smaller",
              (1.0 - Double(universeBin.count) / Double(universeJSON.count)) * 100.0,
              (1.0 - Double(universeText.utf8.count) / Double(universeJSON.count)) * 100.0))
@@ -312,27 +312,27 @@ print("   serialized (\(configText.utf8.count) bytes):")
 print("   \(configText)")
 let configBack = try decode(configText)
 require(configBack == config, "config text roundtrip mismatch")
-print("   ✓ config ASON-text roundtrip OK")
+print("   ✓ config ASUN-text roundtrip OK")
 let configJSON = jsonEncode(config)
-print(String(format: "   ASON text: %d B | JSON: %d B | TEXT vs JSON: %.0f%% smaller",
+print(String(format: "   ASUN text: %d B | JSON: %d B | TEXT vs JSON: %.0f%% smaller",
              configText.utf8.count, configJSON.count,
              (1.0 - Double(configText.utf8.count) / Double(configJSON.count)) * 100.0))
 let configBin = try encodeBinary(config)
 let configBinBack = try decodeBinary(configBin)
 require(configBinBack == config, "config binary roundtrip mismatch")
-print("   ✓ config ASON-bin roundtrip OK")
-print(String(format: "   ASON bin: %d B | BIN vs JSON: %.0f%% smaller",
+print("   ✓ config ASUN-bin roundtrip OK")
+print(String(format: "   ASUN bin: %d B | BIN vs JSON: %.0f%% smaller",
              configBin.count,
              (1.0 - Double(configBin.count) / Double(configJSON.count)) * 100.0))
 
 print("\n12. Large structure (100 countries × nested regions):")
-var totalASON = 0
+var totalASUN = 0
 var totalJSON = 0
 var totalBIN = 0
 for i in 0..<100 {
-    var regions: [AsonValue] = []
+    var regions: [AsunValue] = []
     for r in 0..<3 {
-        var cities: [AsonValue] = []
+        var cities: [AsunValue] = []
         for c in 0..<2 {
             let city = obj([
                 "name": .string("City_\(i)_\(r)_\(c)"),
@@ -360,10 +360,10 @@ for i in 0..<100 {
         regions.append(obj(["name": .string("Region_\(i)_\(r)"), "cities": arr(cities)]))
     }
     let c = makeCountry("Country_\(i)", String(format: "C%02d", i % 100), Int64(1_000_000 + i * 500_000), Double(i) * 0.5, regions)
-    let asonText = try encode(c)
+    let asunText = try encode(c)
     let js = jsonEncode(c)
     let bs = try encodeBinary(c)
-    let decodedCountry = try decode(asonText)
+    let decodedCountry = try decode(asunText)
     let decodedCountryBin = try decodeBinary(bs)
     if case .object(let textObj) = decodedCountry, case .string(let textName) = textObj["name"] {
         require(textName == "Country_\(i)", "country text roundtrip failed")
@@ -375,16 +375,16 @@ for i in 0..<100 {
     } else {
         fatalError("country binary roundtrip failed")
     }
-    totalASON += asonText.utf8.count
+    totalASUN += asunText.utf8.count
     totalJSON += js.count
     totalBIN += bs.count
 }
 print("   100 countries with 5-level nesting:")
-print(String(format: "   Total ASON text: %d bytes (%.1f KB)", totalASON, Double(totalASON) / 1024.0))
-print(String(format: "   Total ASON bin:  %d bytes (%.1f KB)", totalBIN, Double(totalBIN) / 1024.0))
+print(String(format: "   Total ASUN text: %d bytes (%.1f KB)", totalASUN, Double(totalASUN) / 1024.0))
+print(String(format: "   Total ASUN bin:  %d bytes (%.1f KB)", totalBIN, Double(totalBIN) / 1024.0))
 print(String(format: "   Total JSON:      %d bytes (%.1f KB)", totalJSON, Double(totalJSON) / 1024.0))
 print(String(format: "   TEXT vs JSON: %.0f%% smaller | BIN vs JSON: %.0f%% smaller",
-             (1.0 - Double(totalASON) / Double(totalJSON)) * 100.0,
+             (1.0 - Double(totalASUN) / Double(totalJSON)) * 100.0,
              (1.0 - Double(totalBIN) / Double(totalJSON)) * 100.0))
 print("   ✓ all 100 countries roundtrip OK (text + bin)")
 

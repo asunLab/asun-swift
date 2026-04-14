@@ -1,14 +1,14 @@
 import Foundation
-import AsonSwift
+import AsunSwift
 
-// Cross-language compatibility example — matches ason-rs/examples/cross_compat.rs
+// Cross-language compatibility example — matches asun-rs/examples/cross_compat.rs
 
 let input = "[{ID@int,Name@str,Age@int,Gender@bool}]:(1,Alice,30,true),(2,Bob,25,false)"
 
 do {
     // Decode
     let decoded = try decode(input)
-    print("Decoded from ASON:")
+    print("Decoded from ASUN:")
     if case .array(let arr) = decoded {
         for row in arr { print("   \(row)") }
     }
