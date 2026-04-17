@@ -1,8 +1,8 @@
 # asun-swift
 
-[ASUN](https://github.com/asun-lab/asun) 的 Swift 版本，核心目标是低分配编解码、Schema 优先布局与高吞吐二进制链路。
+[ASUN](https://github.com/asunLab/asun) 的 Swift 版本，核心目标是低分配编解码、Schema 优先布局与高吞吐二进制链路。
 
-[English](README.md)
+[English](https://github.com/asunLab/asun-swift/blob/main/README.md)
 
 ## 特性
 

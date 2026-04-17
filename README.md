@@ -1,8 +1,8 @@
 # asun-swift
 
-Swift implementation for [ASUN](https://github.com/asun-lab/asun), focused on low-allocation encoding/decoding, schema-first data layout, and high-throughput binary pipelines.
+Swift implementation for [ASUN](https://github.com/asunLab/asun), focused on low-allocation encoding/decoding, schema-first data layout, and high-throughput binary pipelines.
 
-[中文文档](README_CN.md)
+[中文文档](https://github.com/asunLab/asun-swift/blob/main/README_CN.md)
 
 ## Highlights
 
