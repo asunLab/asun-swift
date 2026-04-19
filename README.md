@@ -4,6 +4,35 @@ Swift implementation for [ASUN](https://github.com/asunLab/asun), focused on low
 
 [中文文档](https://github.com/asunLab/asun-swift/blob/main/README_CN.md)
 
+## Why ASUN?
+
+**json**
+
+Standard JSON repeats every field name in every record. When you send structured data to an LLM, over an API, or across services, that repetition wastes tokens, bytes, and attention:
+
+```json
+[
+  { "id": 1, "name": "Alice", "active": true },
+  { "id": 2, "name": "Bob", "active": false },
+  { "id": 3, "name": "Carol", "active": true }
+]
+```
+
+**asun**
+
+ASUN declares the schema **once** and streams data as compact tuples:
+
+```asun
+[{id, name, active}]:
+  (1,Alice,true),
+  (2,Bob,false),
+  (3,Carol,true)
+```
+
+**Fewer tokens. Smaller payloads. Clearer structure.**
+
+---
+
 ## Highlights
 
 - UTF-8 byte-buffer parser with explicit cursor-based scanning
