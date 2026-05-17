@@ -283,26 +283,41 @@ private enum HeaderCache {
     }
 }
 
-private enum DecodedStringCache {
-    static let lock = NSLock()
-    static var cached: [String: String] = [:]
-    static let maxEntries = 4096
-    static let maxLength = 48
+// (Removed) DecodedStringCache: locking-based string interning was a net loss
+// in single-threaded benchmarks — the lock cost and dictionary hash dominated
+// any reuse savings. Hot-path string construction now goes through
+// `makeString(...)` below, which uses `String(unsafeUninitializedCapacity:)`
+// to skip UTF-8 validation on bytes the parser has already verified.
 
-    static func intern(_ value: String) -> String {
-        if value.isEmpty || value.utf8.count > maxLength {
-            return value
+/// Build a String from a contiguous byte range without re-validating UTF-8.
+/// The decoder treats inputs whose lexical structure is ASCII-safe and copies
+/// any high-bit bytes verbatim; the only non-ASCII bytes that reach here are
+/// already-valid UTF-8 sequences from the source buffer.
+@inline(__always)
+private func makeString(_ ptr: UnsafePointer<UInt8>, _ count: Int) -> String {
+    if count == 0 { return "" }
+    if #available(macOS 11.0, iOS 14.0, tvOS 14.0, watchOS 7.0, *) {
+        return String(unsafeUninitializedCapacity: count) { dst in
+            dst.baseAddress!.update(from: ptr, count: count)
+            return count
         }
-        lock.lock()
-        defer { lock.unlock() }
-        if let cachedValue = cached[value] {
-            return cachedValue
-        }
-        if cached.count >= maxEntries {
-            cached.removeAll(keepingCapacity: true)
-        }
-        cached[value] = value
-        return value
+    }
+    return String(decoding: UnsafeBufferPointer(start: ptr, count: count), as: UTF8.self)
+}
+
+@inline(__always)
+private func makeString(_ buf: [UInt8]) -> String {
+    if buf.isEmpty { return "" }
+    return buf.withUnsafeBufferPointer { ptr in
+        makeString(ptr.baseAddress!, ptr.count)
+    }
+}
+
+@inline(__always)
+private func makeString(_ buf: ContiguousArray<UInt8>) -> String {
+    if buf.isEmpty { return "" }
+    return buf.withUnsafeBufferPointer { ptr in
+        makeString(ptr.baseAddress!, ptr.count)
     }
 }
 
@@ -2267,7 +2282,9 @@ private func parseStrictFloat(_ bytes: [UInt8], _ start: Int, _ end: Int) -> Dou
         hasFracOrExp = true
     }
     if !hasFracOrExp || j != end { return nil }
-    let s = String(decoding: bytes[start..<end], as: UTF8.self)
+    let s = bytes.withUnsafeBufferPointer { p in
+        makeString(p.baseAddress!.advanced(by: start), end - start)
+    }
     return Double(s)
 }
 
@@ -2275,11 +2292,13 @@ private func parseStrictFloat(_ bytes: [UInt8], _ start: Int, _ end: Int) -> Dou
 /// Recognised: `\\ \" \n \t \r \b \f \, \( \) \[ \] \{ \} \: \@ \uXXXX`.
 /// Unknown escapes pass the byte through verbatim (lenient on input).
 private func unescapePlainToken(_ bytes: [UInt8], _ start: Int, _ end: Int) -> String {
-    // Fast path: no backslash → zero-copy decode.
+    // Fast path: no backslash → uninitialised-buffer copy (skips UTF-8 verify).
     var anyEsc = false
     for i in start..<end where bytes[i] == 0x5C { anyEsc = true; break }
     if !anyEsc {
-        return String(decoding: bytes[start..<end], as: UTF8.self)
+        return bytes.withUnsafeBufferPointer { p in
+            makeString(p.baseAddress!.advanced(by: start), end - start)
+        }
     }
     var out: [UInt8] = []
     out.reserveCapacity(end - start)
@@ -2313,7 +2332,7 @@ private func unescapePlainToken(_ bytes: [UInt8], _ start: Int, _ end: Int) -> S
         out.append(c)
         i += 1
     }
-    return String(decoding: out, as: UTF8.self)
+    return makeString(out)
 }
 
 private func parseHex4(_ bytes: [UInt8], _ start: Int) -> UInt32? {
@@ -2621,7 +2640,7 @@ private struct TextParser {
     mutating func parseStringToken() throws -> String {
         skipNoise()
         if peek() == 0x22 { return try parseQuotedString() }
-        return DecodedStringCache.intern(try parseBareTokenFast(stopAtValueEnd))
+        return try parseBareTokenFast(stopAtValueEnd)
     }
 
     mutating func parseSchemaFieldName() throws -> String {
@@ -2660,7 +2679,10 @@ private struct TextParser {
         }
         // If we found a plain quote (no backslash), fast zero-copy return
         if idx < storage.count && storage[idx] == 0x22 {
-            let result = DecodedStringCache.intern(String(decoding: storage[start..<idx], as: UTF8.self))
+            let len = idx - start
+            let result = storage.withUnsafeBufferPointer { p in
+                makeString(p.baseAddress!.advanced(by: start), len)
+            }
             idx += 1
             return result
         }
@@ -2702,7 +2724,7 @@ private struct TextParser {
                 buf.append(c)
             }
         }
-        return DecodedStringCache.intern(String(decoding: buf, as: UTF8.self))
+        return makeString(buf)
     }
 
     @inline(__always)
@@ -2773,7 +2795,10 @@ private struct TextParser {
             while idx < storage.count && storage[idx] >= 0x30 && storage[idx] <= 0x39 { idx += 1 }
             if idx == expStart { throw AsunError.invalidData("invalid float") }
         }
-        let s = String(decoding: storage[start..<idx], as: UTF8.self)
+        let len = idx - start
+        let s = storage.withUnsafeBufferPointer { p in
+            makeString(p.baseAddress!.advanced(by: start), len)
+        }
         guard let v = Double(s) else { throw AsunError.invalidData("invalid float") }
         return v
     }
@@ -3114,11 +3139,13 @@ private struct BinaryReader {
         if len == UInt32.max { return "" }
         let count = Int(len)
         guard idx + count <= data.count else { throw AsunError.unexpectedEOF }
-        let out = data.withUnsafeBytes { raw in
-            String(decoding: raw[idx..<(idx + count)], as: UTF8.self)
+        let out = data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> String in
+            let base = raw.baseAddress!.advanced(by: idx)
+                .assumingMemoryBound(to: UInt8.self)
+            return makeString(base, count)
         }
         idx += count
-        return DecodedStringCache.intern(out)
+        return out
     }
 
     mutating func readValue(as type: SchemaType) throws -> AsunValue {
@@ -3148,11 +3175,13 @@ private struct BinaryReader {
             if len == UInt32.max { return .null }
             let count = Int(len)
             guard idx + count <= data.count else { throw AsunError.unexpectedEOF }
-            let out = data.withUnsafeBytes { raw in
-                String(decoding: raw[idx..<(idx + count)], as: UTF8.self)
+            let out = data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> String in
+                let base = raw.baseAddress!.advanced(by: idx)
+                    .assumingMemoryBound(to: UInt8.self)
+                return makeString(base, count)
             }
             idx += count
-            return .string(DecodedStringCache.intern(out))
+            return .string(out)
         case .array(let inner):
             let n = Int(try readUInt32())
             var out: [AsunValue] = []
