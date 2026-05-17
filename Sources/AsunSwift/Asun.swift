@@ -76,8 +76,20 @@ private func writeI64(_ buf: inout [UInt8], _ v: Int64) {
 /// Fast float formatting with fast paths for common cases.
 @inline(__always)
 private func writeF64(_ buf: inout [UInt8], _ v: Double) {
-    if !v.isFinite || v == 0 {
-        buf.append(contentsOf: [0x30]) // "0"
+    if !v.isFinite {
+        // NaN / ±Inf are not representable in ASUN; emit a placeholder "0.0"
+        // that round-trips as a float. (Spec does not define a NaN literal.)
+        buf.append(contentsOf: [0x30, 0x2E, 0x30]) // "0.0"
+        return
+    }
+    if v == 0 {
+        // Preserve float type fidelity: zero must encode as "0.0", not "0",
+        // so that decode sees a float per SPEC §8.1.
+        if v.sign == .minus {
+            buf.append(contentsOf: [0x2D, 0x30, 0x2E, 0x30]) // "-0.0"
+        } else {
+            buf.append(contentsOf: [0x30, 0x2E, 0x30]) // "0.0"
+        }
         return
     }
     // Integer-valued float: write as int + ".0"
@@ -943,13 +955,77 @@ public struct AsunStructArrayCodec<Row> {
 }
 
 public func encode(_ value: AsunValue) throws -> String {
+    if isBareRoot(value) {
+        var buf: [UInt8] = []
+        try encodeBareRootBuf(&buf, value)
+        return String(decoding: buf, as: UTF8.self)
+    }
     let inferred = try cachedOrInferredRootSchema(from: value, typed: false)
     return try encodeWithSchema(value, schema: inferred, typed: false)
 }
 
 public func encodeTyped(_ value: AsunValue) throws -> String {
+    if isBareRoot(value) {
+        var buf: [UInt8] = []
+        try encodeBareRootBuf(&buf, value)
+        return String(decoding: buf, as: UTF8.self)
+    }
     let inferred = try cachedOrInferredRootSchema(from: value, typed: true)
     return try encodeWithSchema(value, schema: inferred, typed: true)
+}
+
+private func isBareRoot(_ value: AsunValue) -> Bool {
+    switch value {
+    case .object: return false
+    case .array(let arr):
+        // Array of objects → schema-driven; any other array → plain (bare).
+        if let first = arr.first, case .object = first { return false }
+        return true
+    default:
+        return true
+    }
+}
+
+private func encodeBareArrayElementBuf(_ buf: inout [UInt8], _ value: AsunValue) throws {
+    switch value {
+    case .null:
+        // `()` is the canonical null marker inside untyped arrays.
+        buf.append(0x28); buf.append(0x29)
+    case .array(let arr):
+        buf.append(0x5B)
+        for i in arr.indices {
+            if i > 0 { buf.append(0x2C) }
+            try encodeBareArrayElementBuf(&buf, arr[i])
+        }
+        buf.append(0x5D)
+    case .object:
+        try encodeDynamicBuf(&buf, value)
+    default:
+        try encodeDynamicBuf(&buf, value)
+    }
+}
+
+private func encodeBareRootBuf(_ buf: inout [UInt8], _ value: AsunValue) throws {
+    switch value {
+    case .int(let v): writeI64(&buf, v)
+    case .float(let v): writeF64(&buf, v)
+    case .bool(let b):
+        if b { buf.append(contentsOf: [0x74,0x72,0x75,0x65]) }
+        else { buf.append(contentsOf: [0x66,0x61,0x6C,0x73,0x65]) }
+    case .string(let s): encodeStringBuf(&buf, s)
+    case .null:
+        // Cross-language convention: top-level null encodes as `()`.
+        buf.append(0x28); buf.append(0x29)
+    case .array(let arr):
+        buf.append(0x5B) // '['
+        for i in arr.indices {
+            if i > 0 { buf.append(0x2C) }
+            try encodeBareArrayElementBuf(&buf, arr[i])
+        }
+        buf.append(0x5D) // ']'
+    case .object:
+        throw AsunError.invalidRoot("object cannot be a bare root")
+    }
 }
 
 public func encodePretty(_ value: AsunValue) throws -> String {
@@ -962,6 +1038,34 @@ public func encodePrettyTyped(_ value: AsunValue) throws -> String {
 
 public func decode(_ text: String) throws -> AsunValue {
     let bytes = Array(text.utf8)
+
+    // Detect the top-level form per SPEC §8.3 by peeking past leading noise.
+    let firstIdx = try firstNonNoiseIndex(in: bytes)
+    if let i = firstIdx {
+        let c = bytes[i]
+        // Schema-driven forms: `{` or `[{`
+        if c == 0x7B { // '{'
+            return try decodeWithSchemaHeader(bytes)
+        }
+        if c == 0x5B { // '['
+            // Look past any noise after '[' to see if it begins a schema header.
+            let inner = try firstNonNoiseIndex(in: bytes, from: i + 1) ?? bytes.count
+            if inner < bytes.count, bytes[inner] == 0x7B { // '[{'
+                return try decodeWithSchemaHeader(bytes)
+            }
+            // Plain array (no schema) — dynamic decode.
+            return try decodeBareRoot(bytes, from: i)
+        }
+        // Top-level `(` is reserved for the null marker `()` per the cross-language
+        // canonical reference; any non-empty bare tuple is an error.
+        return try decodeBareRoot(bytes, from: i)
+    }
+    // Empty / pure-whitespace / comment-only input → null.
+    return .null
+}
+
+/// Drive the existing schema-driven decode path.
+private func decodeWithSchemaHeader(_ bytes: [UInt8]) throws -> AsunValue {
     let split = try findRootSchemaDelimiter(in: bytes)
     let headerText = String(decoding: bytes[..<split], as: UTF8.self)
     let schema: RootSchema
@@ -974,6 +1078,73 @@ public func decode(_ text: String) throws -> AsunValue {
         schema = parsed
     }
     return try decodeBytesWithSchema(bytes, schema: schema, bodyStart: split)
+}
+
+/// Decode a bare-root value (scalar, plain array, quoted string, or `()` null marker).
+private func decodeBareRoot(_ bytes: [UInt8], from start: Int) throws -> AsunValue {
+    var p = TextParser(bytes: bytes)
+    p.idx = start
+
+    let value: AsunValue
+    if let c = p.peek() {
+        if c == 0x28 { // '('
+            // `()` → null. Anything else is a bare tuple error.
+            p.advance()
+            try p.skipNoiseStrict()
+            if p.peek() == 0x29 { // ')'
+                p.advance()
+                value = .null
+            } else {
+                throw AsunError.invalidData("bare tuple is not a valid top-level value")
+            }
+        } else if c == 0x5B { // '['
+            value = try p.parsePlainArray()
+        } else if c == 0x22 { // '"'
+            value = .string(try p.parseQuotedString())
+        } else {
+            value = try p.parseBareScalarTopLevel()
+        }
+    } else {
+        value = .null
+    }
+
+    try p.skipNoiseStrict()
+    if !p.isAtEnd {
+        throw AsunError.invalidData("trailing content after root value")
+    }
+    return value
+}
+
+/// Walk forward past whitespace and `/* */` block comments, returning the first
+/// non-noise byte index or `nil` if the input is whitespace/comment-only.
+/// Throws on unterminated block comments.
+private func firstNonNoiseIndex(in bytes: [UInt8], from offset: Int = 0) throws -> Int? {
+    var i = offset
+    while i < bytes.count {
+        let c = bytes[i]
+        if c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D {
+            i += 1
+            continue
+        }
+        if c == 0x2F, i + 1 < bytes.count, bytes[i + 1] == 0x2A { // '/*'
+            i += 2
+            var closed = false
+            while i + 1 < bytes.count {
+                if bytes[i] == 0x2A, bytes[i + 1] == 0x2F { // '*/'
+                    i += 2
+                    closed = true
+                    break
+                }
+                i += 1
+            }
+            if !closed {
+                throw AsunError.invalidData("unterminated comment")
+            }
+            continue
+        }
+        return i
+    }
+    return nil
 }
 
 public func encodeBinary(_ value: AsunValue) throws -> Data {
@@ -1697,6 +1868,8 @@ private let NEEDS_QUOTE_TABLE: [Bool] = {
     t[Int(UInt8(ascii: ")"))] = true
     t[Int(UInt8(ascii: "["))] = true
     t[Int(UInt8(ascii: "]"))] = true
+    t[Int(UInt8(ascii: "{"))] = true
+    t[Int(UInt8(ascii: "}"))] = true
     t[Int(UInt8(ascii: ":"))] = true
     t[Int(UInt8(ascii: "@"))] = true
     t[Int(UInt8(ascii: "\""))] = true
@@ -1748,6 +1921,8 @@ private func simdHasSpecialChars(_ base: UnsafePointer<UInt8>, _ count: Int) -> 
     let v_rp = SIMD16<UInt8>(repeating: 0x29)
     let v_lb = SIMD16<UInt8>(repeating: 0x5B)
     let v_rb = SIMD16<UInt8>(repeating: 0x5D)
+    let v_lbrace = SIMD16<UInt8>(repeating: 0x7B)
+    let v_rbrace = SIMD16<UInt8>(repeating: 0x7D)
     let v_colon = SIMD16<UInt8>(repeating: 0x3A)
     let v_at = SIMD16<UInt8>(repeating: 0x40)
     let v_qt = SIMD16<UInt8>(repeating: 0x22)
@@ -1757,6 +1932,7 @@ private func simdHasSpecialChars(_ base: UnsafePointer<UInt8>, _ count: Int) -> 
         let mask = (chunk .< v_1f .| chunk .== v_1f)
             .| chunk .== v_comma .| chunk .== v_lp .| chunk .== v_rp
             .| chunk .== v_lb .| chunk .== v_rb
+            .| chunk .== v_lbrace .| chunk .== v_rbrace
             .| chunk .== v_colon .| chunk .== v_at
             .| chunk .== v_qt .| chunk .== v_bs
         if mask != SIMDMask(repeating: false) { return true }
@@ -1803,11 +1979,25 @@ private func encodeQuotedStringBuf(_ buf: inout [UInt8], _ base: UnsafePointer<U
         if next >= count { break }
         let b = base[next]
         switch b {
-        case 0x5C: buf.append(0x5C); buf.append(0x5C)
-        case 0x22: buf.append(0x5C); buf.append(0x22)
-        case 0x0A: buf.append(0x5C); buf.append(0x6E)
-        case 0x09: buf.append(0x5C); buf.append(0x74)
-        default:   buf.append(b)
+        case 0x5C: buf.append(0x5C); buf.append(0x5C) // \\
+        case 0x22: buf.append(0x5C); buf.append(0x22) // \"
+        case 0x0A: buf.append(0x5C); buf.append(0x6E) // \n
+        case 0x09: buf.append(0x5C); buf.append(0x74) // \t
+        case 0x0D: buf.append(0x5C); buf.append(0x72) // \r
+        case 0x08: buf.append(0x5C); buf.append(0x62) // \b
+        case 0x0C: buf.append(0x5C); buf.append(0x66) // \f
+        default:
+            if b < 0x20 {
+                // Other control chars → \uXXXX
+                buf.append(0x5C); buf.append(0x75)
+                buf.append(0x30); buf.append(0x30)
+                let hi = b >> 4
+                let lo = b & 0x0F
+                buf.append(hi < 10 ? hi + 0x30 : hi - 10 + 0x61)
+                buf.append(lo < 10 ? lo + 0x30 : lo - 10 + 0x61)
+            } else {
+                buf.append(b)
+            }
         }
         start = next + 1
     }
@@ -1839,34 +2029,88 @@ private func encodeStringBuf(_ buf: inout [UInt8], _ s: String) {
 @inline(__always)
 private func needsQuoteRaw(_ ptr: UnsafePointer<UInt8>, _ count: Int) -> Bool {
     if count == 0 { return true }
-    if ptr[0] == 0x20 || ptr[count - 1] == 0x20 { return true }
-    if count == 4 && ptr[0] == 0x74 && ptr[1] == 0x72 && ptr[2] == 0x75 && ptr[3] == 0x65 { return true }
-    if count == 5 && ptr[0] == 0x66 && ptr[1] == 0x61 && ptr[2] == 0x6C && ptr[3] == 0x73 && ptr[4] == 0x65 { return true }
-    if simdHasSpecialChars(ptr, count) { return true }
-    // Check if looks like a number
-    var s = 0
-    if ptr[0] == 0x2D { s = 1 }
-    if s >= count { return false }
-    var allDigitDot = true
-    for i in s..<count {
-        let c = ptr[i]
-        if !((c >= 0x30 && c <= 0x39) || c == 0x2E) { allDigitDot = false; break }
+    let first = ptr[0]
+    let last = ptr[count - 1]
+    if first == 0x20 || last == 0x20 { return true }
+    if first == 0x09 || first == 0x0A || first == 0x0D { return true }
+    if last == 0x09 || last == 0x0A || last == 0x0D { return true }
+    if count == 4, first == 0x74, ptr[1] == 0x72, ptr[2] == 0x75, ptr[3] == 0x65 {
+        return true
     }
-    return allDigitDot
+    if count == 5, first == 0x66, ptr[1] == 0x61, ptr[2] == 0x6C, ptr[3] == 0x73, ptr[4] == 0x65 {
+        return true
+    }
+    if simdHasSpecialChars(ptr, count) { return true }
+    // Block-comment opener anywhere in the string would be consumed by the
+    // skip-noise machinery on decode.
+    if containsBlockComment(ptr, count) { return true }
+    // Strict integer: -?[0-9]+
+    if looksLikeStrictInt(ptr, count) { return true }
+    // Strict float per SPEC §8.1: integer + (frac OR exp)
+    if looksLikeStrictFloat(ptr, count) { return true }
+    return false
+}
+
+@inline(__always)
+private func containsBlockComment(_ ptr: UnsafePointer<UInt8>, _ count: Int) -> Bool {
+    if count < 2 { return false }
+    var i = 0
+    while i + 1 < count {
+        if ptr[i] == 0x2F, ptr[i + 1] == 0x2A { return true } // "/*"
+        i += 1
+    }
+    return false
+}
+
+@inline(__always)
+private func looksLikeStrictInt(_ ptr: UnsafePointer<UInt8>, _ count: Int) -> Bool {
+    var i = 0
+    if ptr[0] == 0x2D { i = 1 }
+    if i >= count { return false }
+    while i < count {
+        let c = ptr[i]
+        if c < 0x30 || c > 0x39 { return false }
+        i += 1
+    }
+    return true
+}
+
+@inline(__always)
+private func looksLikeStrictFloat(_ ptr: UnsafePointer<UInt8>, _ count: Int) -> Bool {
+    var j = 0
+    if j < count, ptr[j] == 0x2D { j += 1 }
+    let intStart = j
+    while j < count, ptr[j] >= 0x30, ptr[j] <= 0x39 { j += 1 }
+    if j == intStart { return false }
+    var hasFracOrExp = false
+    if j < count, ptr[j] == 0x2E {
+        j += 1
+        let fracStart = j
+        while j < count, ptr[j] >= 0x30, ptr[j] <= 0x39 { j += 1 }
+        if j == fracStart { return false }
+        hasFracOrExp = true
+    }
+    if j < count, (ptr[j] == 0x65 || ptr[j] == 0x45) {
+        j += 1
+        if j < count, (ptr[j] == 0x2D || ptr[j] == 0x2B) { j += 1 }
+        let expStart = j
+        while j < count, ptr[j] >= 0x30, ptr[j] <= 0x39 { j += 1 }
+        if j == expStart { return false }
+        hasFracOrExp = true
+    }
+    return hasFracOrExp && j == count
 }
 
 @inline(__always)
 private func needsQuoteSchemaFieldNameRaw(_ ptr: UnsafePointer<UInt8>, _ count: Int) -> Bool {
+    // Per GRAMMAR.abnf: bare-field-name = 1*( ALPHA / DIGIT / "_" ).
+    // Anything outside that set forces a quoted-string field name.
     if count == 0 { return true }
-    let first = ptr[0]
-    if (first >= 0x30 && first <= 0x39) || first == 0x20 { return true }
-    if ptr[count - 1] == 0x20 { return true }
     for i in 0..<count {
         let c = ptr[i]
-        if c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D ||
-            c == 0x40 || c == 0x7B || c == 0x7D ||
-            c == 0x5B || c == 0x5D || c == 0x22 ||
-            c == 0x5C || c == 0x2C || c == 0x3A {
+        let isAlpha = (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A)
+        let isDigit = c >= 0x30 && c <= 0x39
+        if !(isAlpha || isDigit || c == 0x5F) { // not '_'
             return true
         }
     }
@@ -1937,6 +2181,168 @@ private func findRootSchemaDelimiter(in bytes: [UInt8]) throws -> Int {
     }
 
     throw AsunError.invalidData("missing schema delimiter ':'")
+}
+
+/// Strict-ABNF classifier for an already-trimmed bare token.
+/// Implements SPEC §8.1 type-resolution priority.
+private func classifyPlainToken(_ bytes: [UInt8], _ start: Int, _ end: Int) -> AsunValue {
+    let count = end - start
+    if count == 0 { return .string("") }
+
+    // Boolean
+    if count == 4,
+       bytes[start] == 0x74, bytes[start + 1] == 0x72,
+       bytes[start + 2] == 0x75, bytes[start + 3] == 0x65 {
+        return .bool(true)
+    }
+    if count == 5,
+       bytes[start] == 0x66, bytes[start + 1] == 0x61,
+       bytes[start + 2] == 0x6C, bytes[start + 3] == 0x73,
+       bytes[start + 4] == 0x65 {
+        return .bool(false)
+    }
+
+    // Integer: optional '-' then 1+ digits, full token.
+    var k = start
+    var neg = false
+    if k < end, bytes[k] == 0x2D { neg = true; k += 1 } // '-'
+    if k < end {
+        var allDigits = true
+        for j in k..<end {
+            let c = bytes[j]
+            if c < 0x30 || c > 0x39 { allDigits = false; break }
+        }
+        if allDigits {
+            // Parse with overflow detection.
+            var v: UInt64 = 0
+            let lim: UInt64 = neg ? UInt64(Int64.max) + 1 : UInt64(Int64.max)
+            var overflow = false
+            for j in k..<end {
+                let d = UInt64(bytes[j] - 0x30)
+                if v > (lim - d) / 10 { overflow = true; break }
+                v = v * 10 + d
+            }
+            if !overflow {
+                if neg {
+                    if v == UInt64(Int64.max) + 1 { return .int(Int64.min) }
+                    return .int(-Int64(v))
+                }
+                return .int(Int64(v))
+            }
+            // Overflow → fall through to string (token preserved).
+        }
+    }
+
+    // Float: strict ABNF. Leading "+" forbidden; `.5`, `5.`, `1e`, `1e+` all
+    // fall through to string.
+    if let value = parseStrictFloat(bytes, start, end) {
+        return .float(value)
+    }
+
+    // Fallback: string. Apply plain-token escape unwrap.
+    return .string(unescapePlainToken(bytes, start, end))
+}
+
+private func parseStrictFloat(_ bytes: [UInt8], _ start: Int, _ end: Int) -> Double? {
+    var j = start
+    if j < end, bytes[j] == 0x2D { j += 1 }
+    let intStart = j
+    while j < end, bytes[j] >= 0x30, bytes[j] <= 0x39 { j += 1 }
+    if j == intStart { return nil }
+
+    var hasFracOrExp = false
+    if j < end, bytes[j] == 0x2E { // '.'
+        j += 1
+        let fracStart = j
+        while j < end, bytes[j] >= 0x30, bytes[j] <= 0x39 { j += 1 }
+        if j == fracStart { return nil }
+        hasFracOrExp = true
+    }
+    if j < end, (bytes[j] == 0x65 || bytes[j] == 0x45) { // 'e'/'E'
+        j += 1
+        if j < end, (bytes[j] == 0x2D || bytes[j] == 0x2B) { j += 1 }
+        let expStart = j
+        while j < end, bytes[j] >= 0x30, bytes[j] <= 0x39 { j += 1 }
+        if j == expStart { return nil }
+        hasFracOrExp = true
+    }
+    if !hasFracOrExp || j != end { return nil }
+    let s = String(decoding: bytes[start..<end], as: UTF8.self)
+    return Double(s)
+}
+
+/// Unescape a plain (unquoted) token per `escape-char` in GRAMMAR.abnf.
+/// Recognised: `\\ \" \n \t \r \b \f \, \( \) \[ \] \{ \} \: \@ \uXXXX`.
+/// Unknown escapes pass the byte through verbatim (lenient on input).
+private func unescapePlainToken(_ bytes: [UInt8], _ start: Int, _ end: Int) -> String {
+    // Fast path: no backslash → zero-copy decode.
+    var anyEsc = false
+    for i in start..<end where bytes[i] == 0x5C { anyEsc = true; break }
+    if !anyEsc {
+        return String(decoding: bytes[start..<end], as: UTF8.self)
+    }
+    var out: [UInt8] = []
+    out.reserveCapacity(end - start)
+    var i = start
+    while i < end {
+        let c = bytes[i]
+        if c == 0x5C, i + 1 < end {
+            let n = bytes[i + 1]
+            switch n {
+            case 0x6E: out.append(0x0A); i += 2; continue // \n
+            case 0x74: out.append(0x09); i += 2; continue // \t
+            case 0x72: out.append(0x0D); i += 2; continue // \r
+            case 0x62: out.append(0x08); i += 2; continue // \b
+            case 0x66: out.append(0x0C); i += 2; continue // \f
+            // Structural escapes from the grammar: `\\ \" \, \( \) \[ \] \{ \} \: \@`.
+            case 0x5C, 0x22, 0x2C, 0x28, 0x29, 0x5B, 0x5D, 0x7B, 0x7D, 0x40, 0x3A:
+                out.append(n); i += 2; continue
+            case 0x75: // \uXXXX
+                if i + 5 < end,
+                   let cp = parseHex4(bytes, i + 2) {
+                    appendUnicodeScalar(&out, cp)
+                    i += 6
+                    continue
+                }
+                out.append(c); i += 1; continue
+            default:
+                // Unknown escape: emit the byte verbatim for tolerance.
+                out.append(n); i += 2; continue
+            }
+        }
+        out.append(c)
+        i += 1
+    }
+    return String(decoding: out, as: UTF8.self)
+}
+
+private func parseHex4(_ bytes: [UInt8], _ start: Int) -> UInt32? {
+    var v: UInt32 = 0
+    for i in 0..<4 {
+        let b = bytes[start + i]
+        let d: UInt32
+        switch b {
+        case 0x30...0x39: d = UInt32(b - 0x30)
+        case 0x41...0x46: d = UInt32(b - 0x41 + 10)
+        case 0x61...0x66: d = UInt32(b - 0x61 + 10)
+        default: return nil
+        }
+        v = v << 4 | d
+    }
+    return v
+}
+
+private func appendUnicodeScalar(_ out: inout [UInt8], _ cp: UInt32) {
+    if cp < 0x80 {
+        out.append(UInt8(cp))
+    } else if cp < 0x800 {
+        out.append(UInt8(0xC0 | (cp >> 6)))
+        out.append(UInt8(0x80 | (cp & 0x3F)))
+    } else {
+        out.append(UInt8(0xE0 | (cp >> 12)))
+        out.append(UInt8(0x80 | ((cp >> 6) & 0x3F)))
+        out.append(UInt8(0x80 | (cp & 0x3F)))
+    }
 }
 
 private struct TextParser {
@@ -2166,6 +2572,12 @@ private struct TextParser {
         if c == 0x22 { // '"'
             return .string(try parseQuotedString())
         }
+        if c == 0x28 { // '(' — only `()` is accepted as a null marker
+            advance()
+            skipNoise()
+            if peek() == 0x29 { advance(); return .null }
+            throw AsunError.invalidData("unexpected '(' in untyped value position")
+        }
         if c == 0x5B { // '['
             advance()
             var arr: [AsunValue] = []
@@ -2181,13 +2593,29 @@ private struct TextParser {
             return .array(arr)
         }
 
-        let token = try parseBareTokenFast(stopAtValueEnd)
-        if token.isEmpty { return .null }
-        if token == "true" { return .bool(true) }
-        if token == "false" { return .bool(false) }
-        if let i = Int64(token) { return .int(i) }
-        if let d = Double(token) { return .float(d) }
-        return .string(token)
+        // Re-scan from current index using strict ABNF classification so that
+        // tokens like "+5", ".5", "5." are preserved as strings.
+        let start = idx
+        while idx < storage.count {
+            let b = storage[idx]
+            if b == 0x2C || b == 0x29 || b == 0x5D { break }
+            if b == 0x5C, idx + 1 < storage.count { idx += 2; continue }
+            idx += 1
+        }
+        var end = idx
+        while end > start {
+            let b = storage[end - 1]
+            if b == 0x20 || b == 0x09 || b == 0x0A || b == 0x0D { end -= 1 }
+            else { break }
+        }
+        var begin = start
+        while begin < end {
+            let b = storage[begin]
+            if b == 0x20 || b == 0x09 || b == 0x0A || b == 0x0D { begin += 1 }
+            else { break }
+        }
+        if begin == end { return .null }
+        return classifyPlainToken(storage, begin, end)
     }
 
     mutating func parseStringToken() throws -> String {
@@ -2248,11 +2676,27 @@ private struct TextParser {
                 guard idx < storage.count else { throw AsunError.unexpectedEOF }
                 let n = storage[idx]; idx += 1
                 switch n {
-                case 0x6E: buf.append(0x0A)
-                case 0x74: buf.append(0x09)
-                case 0x5C: buf.append(0x5C)
-                case 0x22: buf.append(0x22)
-                default: buf.append(n)
+                case 0x6E: buf.append(0x0A) // \n
+                case 0x74: buf.append(0x09) // \t
+                case 0x72: buf.append(0x0D) // \r
+                case 0x62: buf.append(0x08) // \b
+                case 0x66: buf.append(0x0C) // \f
+                case 0x5C: buf.append(0x5C) // \\
+                case 0x22: buf.append(0x22) // \"
+                // Structural escapes (per GRAMMAR.abnf escape-char):
+                // `\, \( \) \[ \] \{ \} \: \@`.
+                case 0x2C, 0x28, 0x29, 0x5B, 0x5D, 0x7B, 0x7D, 0x40, 0x3A:
+                    buf.append(n)
+                case 0x75: // \uXXXX
+                    if idx + 4 <= storage.count, let cp = parseHex4(storage, idx) {
+                        appendUnicodeScalar(&buf, cp)
+                        idx += 4
+                    } else {
+                        throw AsunError.invalidData("invalid \\u escape")
+                    }
+                default:
+                    // Lenient on input: emit the byte verbatim.
+                    buf.append(n)
                 }
             } else {
                 buf.append(c)
@@ -2311,19 +2755,24 @@ private struct TextParser {
     mutating func parseDouble() throws -> Double {
         skipNoise()
         let start = idx
-        // Scan digits, sign, dot, e/E
-        if idx < storage.count && (storage[idx] == 0x2D || storage[idx] == 0x2B) { idx += 1 } // sign
+        // Per GRAMMAR.abnf, the leading sign of a number may only be `-`.
+        if idx < storage.count && storage[idx] == 0x2D { idx += 1 } // optional '-'
+        let intStart = idx
         while idx < storage.count && storage[idx] >= 0x30 && storage[idx] <= 0x39 { idx += 1 }
+        if idx == intStart { throw AsunError.invalidData("invalid float") }
         if idx < storage.count && storage[idx] == 0x2E { // '.'
             idx += 1
+            let fracStart = idx
             while idx < storage.count && storage[idx] >= 0x30 && storage[idx] <= 0x39 { idx += 1 }
+            if idx == fracStart { throw AsunError.invalidData("invalid float") }
         }
         if idx < storage.count && (storage[idx] == 0x65 || storage[idx] == 0x45) { // 'e'/'E'
             idx += 1
             if idx < storage.count && (storage[idx] == 0x2D || storage[idx] == 0x2B) { idx += 1 }
+            let expStart = idx
             while idx < storage.count && storage[idx] >= 0x30 && storage[idx] <= 0x39 { idx += 1 }
+            if idx == expStart { throw AsunError.invalidData("invalid float") }
         }
-        if idx == start { throw AsunError.invalidData("invalid float") }
         let s = String(decoding: storage[start..<idx], as: UTF8.self)
         guard let v = Double(s) else { throw AsunError.invalidData("invalid float") }
         return v
@@ -2335,6 +2784,11 @@ private struct TextParser {
         let start = idx
         while idx < storage.count {
             let c = storage[idx]
+            if c == 0x5C, idx + 1 < storage.count {
+                // Escaped char — never a stop boundary.
+                idx += 2
+                continue
+            }
             if stopSet.contains(c) { break }
             idx += 1
         }
@@ -2345,9 +2799,143 @@ private struct TextParser {
             if c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D { end -= 1 }
             else { break }
         }
-        return String(decoding: storage[start..<end], as: UTF8.self)
+        // Trim leading whitespace (skipNoise handled most, but value-position
+        // tokens can grab leading spaces if skipNoise was bypassed).
+        var begin = start
+        while begin < end {
+            let c = storage[begin]
+            if c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D { begin += 1 }
+            else { break }
+        }
+        return unescapePlainToken(storage, begin, end)
     }
 
+    /// Skip whitespace and `/* */` comments, throwing on unterminated comments.
+    /// Variant of `skipNoise` for top-level scanning where unterminated
+    /// comments must surface as parse errors instead of silently consuming.
+    mutating func skipNoiseStrict() throws {
+        while idx < storage.count {
+            let c = storage[idx]
+            if c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D {
+                idx += 1
+                continue
+            }
+            if c == 0x2F, idx + 1 < storage.count, storage[idx + 1] == 0x2A { // '/*'
+                idx += 2
+                var closed = false
+                while idx + 1 < storage.count {
+                    if storage[idx] == 0x2A, storage[idx + 1] == 0x2F { // '*/'
+                        idx += 2
+                        closed = true
+                        break
+                    }
+                    idx += 1
+                }
+                if !closed { throw AsunError.invalidData("unterminated comment") }
+                continue
+            }
+            break
+        }
+    }
+
+    /// Parse a plain (unquoted) array: `[v1, v2, ...]`.
+    /// Sparse holes (`[,]`, `[1,,3]`) become null entries.
+    /// Trailing commas (`[1,2,3,]`) are tolerated.
+    mutating func parsePlainArray() throws -> AsunValue {
+        try expect(byte: 0x5B) // '['
+        var items: [AsunValue] = []
+        var first = true
+        while true {
+            try skipNoiseStrict()
+            guard let c = peek() else {
+                throw AsunError.invalidData("unterminated array")
+            }
+            if c == 0x5D { // ']'
+                advance()
+                break
+            }
+            if !first {
+                if c != 0x2C {
+                    throw AsunError.invalidData("expected ',' in array")
+                }
+                advance()
+                try skipNoiseStrict()
+                if peek() == 0x5D { // trailing comma
+                    advance()
+                    break
+                }
+            }
+            first = false
+            // Sparse null: a `,` or `]` directly at the value position.
+            if let n = peek(), n == 0x2C || n == 0x5D {
+                items.append(.null)
+                continue
+            }
+            items.append(try parseDynamicArrayElement())
+        }
+        return .array(items)
+    }
+
+    /// Parse a value inside a plain array.
+    mutating func parseDynamicArrayElement() throws -> AsunValue {
+        try skipNoiseStrict()
+        guard let c = peek() else { return .null }
+        if c == 0x5B { return try parsePlainArray() }
+        if c == 0x22 { return .string(try parseQuotedString()) }
+        if c == 0x28 { // '(' — only `()` accepted as null inside plain arrays
+            advance()
+            try skipNoiseStrict()
+            if peek() == 0x29 { advance(); return .null }
+            throw AsunError.invalidData("unexpected '(' in untyped value position")
+        }
+        // Bare token until the array's structural delimiter.
+        let start = idx
+        while idx < storage.count {
+            let b = storage[idx]
+            if b == 0x2C || b == 0x5D || b == 0x29 || b == 0x7D { break } // ,])}
+            if b == 0x5C, idx + 1 < storage.count { idx += 2; continue }
+            idx += 1
+        }
+        var end = idx
+        while end > start {
+            let b = storage[end - 1]
+            if b == 0x20 || b == 0x09 || b == 0x0A || b == 0x0D { end -= 1 }
+            else { break }
+        }
+        var begin = start
+        while begin < end {
+            let b = storage[begin]
+            if b == 0x20 || b == 0x09 || b == 0x0A || b == 0x0D { begin += 1 }
+            else { break }
+        }
+        return classifyPlainToken(storage, begin, end)
+    }
+
+    /// Parse a top-level bare scalar value (anything that isn't a schema, array,
+    /// or quoted string). Internal whitespace is preserved; leading/trailing
+    /// whitespace is trimmed.
+    mutating func parseBareScalarTopLevel() throws -> AsunValue {
+        let start = idx
+        while idx < storage.count {
+            let b = storage[idx]
+            if b == 0x2C || b == 0x5D || b == 0x29 || b == 0x7D { break } // ,])}
+            if b == 0x5C, idx + 1 < storage.count { idx += 2; continue }
+            idx += 1
+        }
+        var end = idx
+        while end > start {
+            let b = storage[end - 1]
+            if b == 0x20 || b == 0x09 || b == 0x0A || b == 0x0D { end -= 1 }
+            else { break }
+        }
+        var begin = start
+        while begin < end {
+            let b = storage[begin]
+            if b == 0x20 || b == 0x09 || b == 0x0A || b == 0x0D { begin += 1 }
+            else { break }
+        }
+        return classifyPlainToken(storage, begin, end)
+    }
 }
 
 private struct BinaryWriter {

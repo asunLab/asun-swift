@@ -634,8 +634,16 @@ test {
 // ===========================================================================
 section("16. Format validation (bad input)")
 
-assertThrows({ _ = try decode("") }, "empty input")
-assertThrows({ _ = try decode("not-asun") }, "garbage input")
+// Empty input is a blank value → null per SPEC §8.1, not an error.
+test {
+    let v = try decode("")
+    assertEq(v, AsunValue.null, "empty input → null")
+}
+// Plain non-schema text decodes as a bare scalar string per SPEC §8.3.
+test {
+    let v = try decode("not-asun")
+    assertEq(v, AsunValue.string("not-asun"), "garbage input → string")
+}
 assertThrows({ _ = try decode("{id@int}:") }, "schema with no data")
 assertThrows({ _ = try decode("{id@int}:(abc)") }, "int field with non-int data")
 assertThrows({ _ = try decode("{id@badtype}:(1)") }, "unknown type")
@@ -1251,6 +1259,128 @@ test {
     let bin = try codec.encodeBinary(team)
     let decoded = try codec.decodeBinary(bin)
     assertEq(decoded, team, "typed nested struct binary roundtrip")
+}
+
+// ===========================================================================
+// 34. ABNF grammar conformance — strict-rule round-trips
+// ===========================================================================
+section("34. ABNF grammar conformance")
+
+// Float zero must round-trip as float (not int)
+test {
+    let s = try encode(AsunValue.float(0.0))
+    let d = try decode(s)
+    if case .float = d {} else {
+        failed += 1; total += 1
+        print("  ✗ float(0.0) round-trips as \(d), encoded: \(s)")
+        return
+    }
+    passed += 1; total += 1
+}
+
+// String "0.0" must round-trip as string (encoder must quote)
+test {
+    let s = try encode(AsunValue.string("0.0"))
+    let d = try decode(s)
+    if case .string("0.0") = d {} else {
+        failed += 1; total += 1
+        print("  ✗ string(\"0.0\") round-trips as \(d), encoded: \(s)")
+        return
+    }
+    passed += 1; total += 1
+}
+
+// Strict-ABNF cascade: ".5", "5.", "+5", "1e", "1e+" are strings
+for tok in [".5", "5.", "+5", ".5e2", "1e", "1e+"] {
+    test {
+        let d = try decode(tok)
+        if case .string(let got) = d, got == tok {
+            passed += 1; total += 1
+        } else {
+            failed += 1; total += 1
+            print("  ✗ \"\(tok)\" decoded as \(d), expected string")
+        }
+    }
+}
+
+// Plain-token escape: a\,b → a,b
+test {
+    let d = try decode("a\\,b")
+    if case .string("a,b") = d { passed += 1; total += 1 }
+    else { failed += 1; total += 1; print("  ✗ a\\,b → \(d)") }
+}
+
+// Quoted \r escape
+test {
+    let d = try decode("\"a\\rb\"")
+    if case .string("a\rb") = d { passed += 1; total += 1 }
+    else { failed += 1; total += 1; print("  ✗ \\r escape → \(d)") }
+}
+
+// \uXXXX BMP unicode
+test {
+    let d = try decode("\"\\u4e2d\\u6587\"")
+    if case .string("中文") = d { passed += 1; total += 1 }
+    else { failed += 1; total += 1; print("  ✗ \\u escape → \(d)") }
+}
+
+// Bare tuple errors
+assertThrows({ _ = try decode("(1,2,3)") }, "bare tuple error")
+
+// () decodes to null
+test {
+    let d = try decode("()")
+    if case .null = d { passed += 1; total += 1 }
+    else { failed += 1; total += 1; print("  ✗ () → \(d)") }
+}
+
+// Unterminated comment errors
+assertThrows({ _ = try decode("/* not closed") }, "unterminated comment error")
+
+// Field name with characters outside ALPHA/DIGIT/_ are quoted on encode
+test {
+    let v = AsunValue.object(["my.field": .int(1), "my-key": .int(2)])
+    let s = try encode(v)
+    if !s.contains("\"my.field\"") || !s.contains("\"my-key\"") {
+        failed += 1; total += 1
+        print("  ✗ field-name encoder did not quote special chars: \(s)")
+        return
+    }
+    let d = try decode(s)
+    if case .object(let o) = d, case .int(1) = o["my.field"], case .int(2) = o["my-key"] {
+        passed += 1; total += 1
+    } else {
+        failed += 1; total += 1
+        print("  ✗ field-name round-trip failed: \(d)")
+    }
+}
+
+// Sparse-null array decode
+test {
+    let d = try decode("[1,,3]")
+    if case .array(let a) = d, a.count == 3,
+       case .int(1) = a[0], case .null = a[1], case .int(3) = a[2] {
+        passed += 1; total += 1
+    } else {
+        failed += 1; total += 1
+        print("  ✗ [1,,3] → \(d)")
+    }
+}
+
+// Trailing comma tolerated in plain array
+test {
+    let d = try decode("[1,2,3,]")
+    if case .array(let a) = d, a.count == 3 { passed += 1; total += 1 }
+    else { failed += 1; total += 1; print("  ✗ trailing comma → \(d)") }
+}
+
+// String containing /* must be quoted on encode
+test {
+    let v = AsunValue.string("/* x */")
+    let s = try encode(v)
+    let d = try decode(s)
+    if case .string("/* x */") = d { passed += 1; total += 1 }
+    else { failed += 1; total += 1; print("  ✗ /* x */ round-trip → \(d), encoded: \(s)") }
 }
 
 // ===========================================================================
